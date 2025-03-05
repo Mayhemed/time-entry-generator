@@ -1,0 +1,992 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Generate Time Entries - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Generate Time Entries</h1>
+</div>
+
+{% if start_date and end_date %}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    Date range selected: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header">Generate Time Entries</div>
+            <div class="card-body">
+                <!-- Form to capture start/end date for generation -->
+                <form id="generate-entries-form" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="date" name="start_date" id="start_date" class="form-control" value="{{ start_date }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Evidence Types to Include</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="email" id="evidence_email" name="evidence_types" checked>
+                            <label class="form-check-label" for="evidence_email">
+                                Emails
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="sms" id="evidence_sms" name="evidence_types" checked>
+                            <label class="form-check-label" for="evidence_sms">
+                                SMS Messages
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="phone_call" id="evidence_phone" name="evidence_types" checked>
+                            <label class="form-check-label" for="evidence_phone">
+                                Phone Calls
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="docket" id="evidence_docket" name="evidence_types" checked>
+                            <label class="form-check-label" for="evidence_docket">
+                                Docket Entries
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-12 mt-3">
+                        <div class="accordion" id="accordionPrompt">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="headingPrompt">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePrompt" aria-expanded="false" aria-controls="collapsePrompt">
+                                        Edit AI Prompt and Instructions
+                                    </button>
+                                </h2>
+                                <div id="collapsePrompt" class="accordion-collapse collapse" aria-labelledby="headingPrompt" data-bs-parent="#accordionPrompt">
+                                    <div class="accordion-body">
+                                        <div class="mb-3">
+                                            <label for="system_prompt" class="form-label">System Prompt (Instructions to AI)</label>
+                                            <textarea class="form-control" id="system_prompt" name="system_prompt" rows="6">You are a legal billing specialist for a law firm. Your task is to generate detailed, accurate time entries for legal work based on the evidence provided. Follow all instructions precisely and return properly formatted entries that adhere to legal billing best practices.</textarea>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="activity_codes" class="form-label">Activity Codes</label>
+                                            <textarea class="form-control" id="activity_codes" name="activity_codes" rows="12">ACTIVITY CODES:
+01 = Communication 
+02 = Communication with Client 
+03 = Communication with Court Clerk 
+04 = Communication with Other Person 
+05 = Consulting Call 
+06 = Declaration 
+07 = Deposition 
+08 = Drafting 
+09 = E-File 
+10 = E-mail 
+11 = E-Sign 
+12 = Forms 
+13 = Hearing/Motions 
+14 = In-person Filing 
+15 = Internal Case Review 
+16 = Mail Filing 
+17 = Mediation 
+18 = Meeting 
+19 = No Charge 
+20 = Other 
+21 = Phone Call 
+22 = Preparing Legal Forms 
+23 = Research 
+24 = Reserve Remote Hearing 
+25 = Response 
+26 = Reviewing Material 
+27 = Text Message 
+28 = Training - Internal 
+29 = Travel 
+30 = Westlaw Research 
+31 = Zoom Meeting 
+32 = Due Diligence</textarea>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="prompt_template" class="form-label">Custom Instructions</label>
+                                            <textarea class="form-control" id="prompt_template" name="prompt_template" rows="6">INSTRUCTIONS:
+1. Generate realistic and specific time entries based on the evidence
+2. Group related activities into single entries
+3. IMPORTANT: Categorize entries by project or docket event - always tie work back to specific legal documents, filings, or discovery activities
+4. Use minimum billing increments of 0.1 hours (6 minutes)
+5. Include the appropriate activity code in the activity_description field (e.g., "08 = Drafting")
+6. Provide detailed notes that clearly explain the work performed</textarea>
+                                        </div>
+                                        <div class="form-check mb-3">
+                                            <input class="form-check-input" type="checkbox" value="1" id="preview_prompt" name="preview_prompt">
+                                            <label class="form-check-label" for="preview_prompt">
+                                                Preview the complete prompt before sending
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-12 mt-3">
+                        <button type="button" class="btn btn-outline-secondary me-2" id="preview-evidence-btn">
+                            Preview Evidence to Send
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="generate-btn">
+                            Generate Time Entries
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Where we show the results after generation -->
+        <div id="generation-status" class="card mt-4 d-none">
+            <div class="card-header">Generation Status</div>
+            <div class="card-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                </div>
+                <p>Generating time entries... This may take a few moments.</p>
+            </div>
+        </div>
+
+        <div id="generation-error" class="card mt-4 d-none">
+            <div class="card-header bg-danger text-white">Error</div>
+            <div class="card-body">
+                <p id="error-message">An error occurred while generating time entries.</p>
+                <pre id="error-details" class="bg-light p-3 rounded"></pre>
+            </div>
+        </div>
+
+        <div id="generation-results" class="card mt-4 d-none">
+            <div class="card-header">Generated Entries</div>
+            <div class="card-body">
+                <p><span id="entry-count" class="fw-bold">0</span> time entries were generated.</p>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Hours</th>
+                                <th>Activity</th>
+                                <th>Description</th>
+                                <th>Billable</th>
+                            </tr>
+                        </thead>
+                        <tbody id="generated-entries-list"></tbody>
+                    </table>
+                </div>
+                
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <a href="#" class="btn btn-outline-primary" id="view-time-entries-btn">View All Time Entries</a>
+                    <a href="#" class="btn btn-primary" id="export-time-entries-btn">Export to CSV</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Evidence Modal -->
+<div class="modal fade" id="previewEvidenceModal" tabindex="-1" aria-labelledby="previewEvidenceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewEvidenceModalLabel">Preview Evidence</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="evidence-loading" class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading evidence data...</p>
+                </div>
+                <div id="evidence-content" style="display:none;">
+                    <ul class="nav nav-tabs" id="evidenceTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="stats-tab" data-bs-toggle="tab" data-bs-target="#stats-tab-pane" type="button" role="tab" aria-controls="stats-tab-pane" aria-selected="true">
+                                Statistics
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-tab-pane" type="button" role="tab" aria-controls="email-tab-pane" aria-selected="false">
+                                Emails
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="sms-tab" data-bs-toggle="tab" data-bs-target="#sms-tab-pane" type="button" role="tab" aria-controls="sms-tab-pane" aria-selected="false">
+                                SMS
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="phone-tab" data-bs-toggle="tab" data-bs-target="#phone-tab-pane" type="button" role="tab" aria-controls="phone-tab-pane" aria-selected="false">
+                                Phone Calls
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="docket-tab" data-bs-toggle="tab" data-bs-target="#docket-tab-pane" type="button" role="tab" aria-controls="docket-tab-pane" aria-selected="false">
+                                Docket
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="json-tab" data-bs-toggle="tab" data-bs-target="#json-tab-pane" type="button" role="tab" aria-controls="json-tab-pane" aria-selected="false">
+                                JSON
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content mt-3" id="evidenceTabsContent">
+                        <div class="tab-pane fade show active" id="stats-tab-pane" role="tabpanel" aria-labelledby="stats-tab" tabindex="0">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header">Evidence Summary</div>
+                                        <div class="card-body">
+                                            <ul class="list-group list-group-flush" id="evidence-summary-list">
+                                                <!-- Populated dynamically -->
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header">Date Range</div>
+                                        <div class="card-body">
+                                            <p><strong>Start Date:</strong> <span id="evidence-start-date"></span></p>
+                                            <p><strong>End Date:</strong> <span id="evidence-end-date"></span></p>
+                                            <p><strong>Total Days:</strong> <span id="evidence-total-days"></span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="email-tab-pane" role="tabpanel" aria-labelledby="email-tab" tabindex="0">
+                            <div class="table-responsive">
+                                <table class="table table-striped" id="email-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>From</th>
+                                            <th>To</th>
+                                            <th>Subject</th>
+                                            <th>Body</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="sms-tab-pane" role="tabpanel" aria-labelledby="sms-tab" tabindex="0">
+                            <div class="table-responsive">
+                                <table class="table table-striped" id="sms-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>From/To</th>
+                                            <th>Message</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="phone-tab-pane" role="tabpanel" aria-labelledby="phone-tab" tabindex="0">
+                            <div class="table-responsive">
+                                <table class="table table-striped" id="phone-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Contact</th>
+                                            <th>Duration</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="docket-tab-pane" role="tabpanel" aria-labelledby="docket-tab" tabindex="0">
+                            <div class="table-responsive">
+                                <table class="table table-striped" id="docket-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Event Type</th>
+                                            <th>Filed By</th>
+                                            <th>Memo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="json-tab-pane" role="tabpanel" aria-labelledby="json-tab" tabindex="0">
+                            <pre id="evidence-json" class="bg-light p-3 rounded" style="max-height: 600px; overflow-y: auto;"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Complete Prompt Modal -->
+<div class="modal fade" id="previewPromptModal" tabindex="-1" aria-labelledby="previewPromptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewPromptModalLabel">Preview AI Prompt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="complete_prompt" class="form-label">Complete Prompt (Edit as needed)</label>
+                    <textarea class="form-control" id="complete_prompt" name="complete_prompt" rows="20"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="send-prompt-btn">Send to AI</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Script for the Generate Entries page
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('generate-entries-form');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusCard = document.getElementById('generation-status');
+        const resultsCard = document.getElementById('generation-results');
+        const errorCard = document.getElementById('generation-error');
+        const entriesList = document.getElementById('generated-entries-list');
+        const entryCount = document.getElementById('entry-count');
+        const errorMessage = document.getElementById('error-message');
+        const errorDetails = document.getElementById('error-details');
+        const exportBtn = document.getElementById('export-time-entries-btn');
+        const viewBtn = document.getElementById('view-time-entries-btn');
+        const previewEvidenceBtn = document.getElementById('preview-evidence-btn');
+        const sendPromptBtn = document.getElementById('send-prompt-btn');
+        
+        // Parse URL parameters to pre-fill date fields
+        const urlParams = new URLSearchParams(window.location.search);
+        const startDateParam = urlParams.get('start_date');
+        const endDateParam = urlParams.get('end_date');
+        
+        if (startDateParam) {
+            document.getElementById('start_date').value = startDateParam;
+        }
+        
+        if (endDateParam) {
+            document.getElementById('end_date').value = endDateParam;
+        }
+        
+        // Auto-submit if both dates are provided in URL
+        if (startDateParam && endDateParam && form) {
+            // Slight delay to ensure the page is fully loaded
+            setTimeout(function() {
+                generateBtn.click();
+            }, 500);
+        }
+        
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Reset UI
+                entriesList.innerHTML = '';
+                errorCard.classList.add('d-none');
+                resultsCard.classList.add('d-none');
+                
+                // Show loading state
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+                statusCard.classList.remove('d-none');
+                
+                // Get form data
+                const startDate = document.getElementById('start_date').value;
+                const endDate = document.getElementById('end_date').value;
+                
+                // Get form data
+                const formData = new FormData(form);
+                const evidenceTypes = [];
+                // Check which evidence types checkboxes are checked
+                document.querySelectorAll('input[name="evidence_types"]:checked').forEach(checkbox => {
+                    evidenceTypes.push(checkbox.value);
+                });
+                
+                // Check if user wants to preview the prompt first
+                if (formData.get('preview_prompt') === "1") {
+                    previewPrompt(formData);
+                    return;
+                }
+                
+                // Prepare request data
+                const requestData = {
+                    start_date: startDate,
+                    end_date: endDate,
+                    evidence_types: evidenceTypes,
+                    system_prompt: formData.get('system_prompt'),
+                    activity_codes: formData.get('activity_codes'),
+                    prompt_template: formData.get('prompt_template')
+                };
+                
+                // Send AJAX request
+                fetch('/generate-time-entries', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Error generating time entries');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    handleGenerationResponse(data);
+                })
+                .catch(error => {
+                    handleGenerationError(error);
+                });
+            });
+        }
+        
+        // Function to preview the prompt before sending
+        function previewPrompt(formData) {
+            const startDate = formData.get('start_date');
+            const endDate = formData.get('end_date');
+            const systemPrompt = formData.get('system_prompt');
+            const activityCodes = formData.get('activity_codes');
+            const promptTemplate = formData.get('prompt_template');
+            const evidenceTypes = [];
+            // Check which evidence types checkboxes are checked
+            document.querySelectorAll('input[name="evidence_types"]:checked').forEach(checkbox => {
+                evidenceTypes.push(checkbox.value);
+            });
+            
+            // Construct the complete prompt that would be sent to the AI
+            let completePrompt = `${systemPrompt}\n\n${activityCodes}\n\n${promptTemplate}\n\n`;
+            completePrompt += `Date Range: {start_date} to {end_date}\n`;
+            completePrompt += `Evidence Types: ${evidenceTypes.join(', ')}\n\n`;
+            completePrompt += `IMPORTANT: Please return your response in JSON format. The response must be a valid JSON array of time entry objects, without any additional text. Each entry should include fields for date, activity_description, note, price, quantity, etc. Example format:
+[
+  {
+    "date": "2024-05-01", 
+    "activity_description": "08 = Drafting",
+    "note": "Drafted initial response to motion",
+    "price": 475,
+    "quantity": 2.0,
+    "matter": "Default Matter Name",
+    "activity_user": "Mark Piesner",
+    "type": "TimeEntry",
+    "non_billable": 0
+  },
+  {
+    "date": "2024-05-02",
+    "activity_description": "02 = Communication with Client",
+    "note": "Call with client to discuss case strategy",
+    "price": 475,
+    "quantity": 0.5,
+    "matter": "Default Matter Name",
+    "activity_user": "Mark Piesner",
+    "type": "TimeEntry",
+    "non_billable": 0
+  }
+]
+
+Please create time entries based on the evidence provided and return them in this exact JSON format.`;
+            
+            // Show the prompt in the modal
+            document.getElementById('complete_prompt').value = completePrompt;
+            
+            // Show the modal
+            const promptModalElement = document.getElementById('previewPromptModal');
+            let promptModal = bootstrap.Modal.getInstance(promptModalElement);
+            if (!promptModal) {
+                promptModal = new bootstrap.Modal(promptModalElement);
+            }
+            promptModal.show();
+        }
+        
+        // Event listener for the "Preview Evidence" button
+        if (previewEvidenceBtn) {
+            previewEvidenceBtn.addEventListener('click', function() {
+                const formData = new FormData(form);
+                const startDate = formData.get('start_date');
+                const endDate = formData.get('end_date');
+                const evidenceTypes = [];
+                // Check which evidence types checkboxes are checked
+                document.querySelectorAll('input[name="evidence_types"]:checked').forEach(checkbox => {
+                    evidenceTypes.push(checkbox.value);
+                });
+                
+                // Validation
+                if (!startDate || !endDate) {
+                    alert('Please select both start and end dates.');
+                    return;
+                }
+                
+                // Show the loading indicator
+                document.getElementById('evidence-loading').style.display = 'block';
+                document.getElementById('evidence-content').style.display = 'none';
+                
+                // Show the modal
+                const evidenceModalElement = document.getElementById('previewEvidenceModal');
+                let evidenceModal = bootstrap.Modal.getInstance(evidenceModalElement);
+                if (!evidenceModal) {
+                    evidenceModal = new bootstrap.Modal(evidenceModalElement);
+                }
+                evidenceModal.show();
+                
+                // Make AJAX call to get evidence data
+                fetch('/preview-evidence', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        start_date: startDate,
+                        end_date: endDate,
+                        evidence_types: evidenceTypes
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching evidence data');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide loading indicator
+                    document.getElementById('evidence-loading').style.display = 'none';
+                    document.getElementById('evidence-content').style.display = 'block';
+                    
+                    // Populate the summary tab
+                    const summaryList = document.getElementById('evidence-summary-list');
+                    summaryList.innerHTML = '';
+                    
+                    let totalItems = 0;
+                    
+                    if (data.emails && data.emails.length > 0) {
+                        const emailItem = document.createElement('li');
+                        emailItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        emailItem.innerHTML = `
+                            Emails
+                            <span class="badge bg-primary rounded-pill">${data.emails.length}</span>
+                        `;
+                        summaryList.appendChild(emailItem);
+                        totalItems += data.emails.length;
+                        
+                        // Populate the emails tab
+                        const emailTable = document.getElementById('email-table').getElementsByTagName('tbody')[0];
+                        emailTable.innerHTML = '';
+                        
+                        data.emails.forEach(email => {
+                            const row = document.createElement('tr');
+                            // Format date safely
+                            let formattedDate = 'N/A';
+                            if (email.date || email.timestamp) {
+                                const dateValue = email.date || email.timestamp;
+                                try {
+                                    formattedDate = new Date(dateValue).toLocaleString();
+                                    // Check if date is valid
+                                    if (formattedDate === 'Invalid Date') {
+                                        formattedDate = dateValue; // Use the original string
+                                    }
+                                } catch (e) {
+                                    formattedDate = dateValue; // Fallback to the raw value
+                                }
+                            }
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${email.from || 'N/A'}</td>
+                                <td>${email.to || 'N/A'}</td>
+                                <td>${email.subject || 'N/A'}</td>
+                                <td>${email.body || 'N/A'}</td>
+                            `;
+                            emailTable.appendChild(row);
+                        });
+                    }
+                    
+                    if (data.sms && data.sms.length > 0) {
+                        const smsItem = document.createElement('li');
+                        smsItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        smsItem.innerHTML = `
+                            SMS Messages
+                            <span class="badge bg-primary rounded-pill">${data.sms.length}</span>
+                        `;
+                        summaryList.appendChild(smsItem);
+                        totalItems += data.sms.length;
+                        
+                        // Populate the SMS tab
+                        const smsTable = document.getElementById('sms-table').getElementsByTagName('tbody')[0];
+                        smsTable.innerHTML = '';
+                        
+                        data.sms.forEach(message => {
+                            const row = document.createElement('tr');
+                            // Format date safely
+                            let formattedDate = 'N/A';
+                            if (message.date || message.timestamp) {
+                                const dateValue = message.date || message.timestamp;
+                                try {
+                                    formattedDate = new Date(dateValue).toLocaleString();
+                                    // Check if date is valid
+                                    if (formattedDate === 'Invalid Date') {
+                                        formattedDate = dateValue; // Use the original string
+                                    }
+                                } catch (e) {
+                                    formattedDate = dateValue; // Fallback to the raw value
+                                }
+                            }
+                            
+                            // Get message text
+                            const messageText = message.message || message.text || 'N/A';
+                            // Get contact name
+                            const contactName = message.contact || message.from || message.to || 'N/A';
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${contactName}</td>
+                                <td>${messageText}</td>
+                            `;
+                            smsTable.appendChild(row);
+                        });
+                    }
+                    
+                    if (data.phone_calls && data.phone_calls.length > 0) {
+                        const phoneItem = document.createElement('li');
+                        phoneItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        phoneItem.innerHTML = `
+                            Phone Calls
+                            <span class="badge bg-primary rounded-pill">${data.phone_calls.length}</span>
+                        `;
+                        summaryList.appendChild(phoneItem);
+                        totalItems += data.phone_calls.length;
+                        
+                        // Populate the phone calls tab
+                        const phoneTable = document.getElementById('phone-table').getElementsByTagName('tbody')[0];
+                        phoneTable.innerHTML = '';
+                        
+                        data.phone_calls.forEach(call => {
+                            const row = document.createElement('tr');
+                            // Format date safely
+                            let formattedDate = 'N/A';
+                            if (call.date || call.timestamp) {
+                                const dateValue = call.date || call.timestamp;
+                                try {
+                                    formattedDate = new Date(dateValue).toLocaleString();
+                                    // Check if date is valid
+                                    if (formattedDate === 'Invalid Date') {
+                                        formattedDate = dateValue; // Use the original string
+                                    }
+                                } catch (e) {
+                                    formattedDate = dateValue; // Fallback to the raw value
+                                }
+                            }
+                            
+                            // Format duration
+                            let durationText = 'N/A';
+                            if (call.duration) {
+                                durationText = call.duration;
+                            } else if (call.duration_seconds) {
+                                const seconds = parseInt(call.duration_seconds);
+                                if (!isNaN(seconds)) {
+                                    const minutes = Math.floor(seconds / 60);
+                                    const remainingSeconds = seconds % 60;
+                                    durationText = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+                                }
+                            }
+                            
+                            // Get call type
+                            const callType = call.type || call.call_type || 'phone_call';
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${callType}</td>
+                                <td>${call.contact || 'N/A'}</td>
+                                <td>${durationText}</td>
+                            `;
+                            phoneTable.appendChild(row);
+                        });
+                    }
+                    
+                    if (data.docket_entries && data.docket_entries.length > 0) {
+                        const docketItem = document.createElement('li');
+                        docketItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        docketItem.innerHTML = `
+                            Docket Entries
+                            <span class="badge bg-primary rounded-pill">${data.docket_entries.length}</span>
+                        `;
+                        summaryList.appendChild(docketItem);
+                        totalItems += data.docket_entries.length;
+                        
+                        // Populate the docket entries tab
+                        const docketTable = document.getElementById('docket-table').getElementsByTagName('tbody')[0];
+                        docketTable.innerHTML = '';
+                        
+                        data.docket_entries.forEach(entry => {
+                            const row = document.createElement('tr');
+                            // Format date safely
+                            let formattedDate = 'N/A';
+                            if (entry.date || entry.timestamp) {
+                                const dateValue = entry.date || entry.timestamp;
+                                try {
+                                    formattedDate = new Date(dateValue).toLocaleString();
+                                    // Check if date is valid
+                                    if (formattedDate === 'Invalid Date') {
+                                        formattedDate = dateValue; // Use the original string
+                                    }
+                                } catch (e) {
+                                    formattedDate = dateValue; // Fallback to the raw value
+                                }
+                            }
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${entry.event_type || 'N/A'}</td>
+                                <td>${entry.filed_by || 'N/A'}</td>
+                                <td>${entry.memo || 'N/A'}</td>
+                            `;
+                            docketTable.appendChild(row);
+                        });
+                    }
+                    
+                    // Add total count
+                    const totalItem = document.createElement('li');
+                    totalItem.className = 'list-group-item d-flex justify-content-between align-items-center fw-bold';
+                    totalItem.innerHTML = `
+                        Total Evidence Items
+                        <span class="badge bg-success rounded-pill">${totalItems}</span>
+                    `;
+                    summaryList.prepend(totalItem);
+                    
+                    // Format dates safely for display
+                    let formattedStartDate = startDate;
+                    let formattedEndDate = endDate;
+                    
+                    try {
+                        const startDt = new Date(startDate);
+                        if (!isNaN(startDt.getTime())) {
+                            formattedStartDate = startDt.toLocaleDateString();
+                        }
+                    } catch (e) {
+                        console.warn("Could not format start date:", e);
+                    }
+                    
+                    try {
+                        const endDt = new Date(endDate);
+                        if (!isNaN(endDt.getTime())) {
+                            formattedEndDate = endDt.toLocaleDateString();
+                        }
+                    } catch (e) {
+                        console.warn("Could not format end date:", e);
+                    }
+                    
+                    // Populate date range info
+                    document.getElementById('evidence-start-date').textContent = formattedStartDate;
+                    document.getElementById('evidence-end-date').textContent = formattedEndDate;
+                    
+                    // Calculate total days - handle potential date parsing errors
+                    let diffDays = 0;
+                    try {
+                        const startDt = new Date(startDate);
+                        const endDt = new Date(endDate);
+                        
+                        if (!isNaN(startDt.getTime()) && !isNaN(endDt.getTime())) {
+                            const diffTime = Math.abs(endDt - startDt);
+                            diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        } else {
+                            diffDays = "Unknown";
+                        }
+                    } catch (e) {
+                        console.warn("Could not calculate date difference:", e);
+                        diffDays = "Unknown";
+                    }
+                    document.getElementById('evidence-total-days').textContent = diffDays;
+                    
+                    // Show the JSON tab
+                    document.getElementById('evidence-json').textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('evidence-loading').style.display = 'none';
+                    document.getElementById('evidence-content').style.display = 'block';
+                    
+                    // More detailed error message
+                    let errorMessage = error.message || 'Unknown error';
+                    
+                    document.getElementById('evidence-content').innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5>Error loading evidence data</h5>
+                            <p>${errorMessage}</p>
+                            <p>This might be caused by a temporary server issue or an issue with the data. Try the following:</p>
+                            <ul>
+                                <li>Refresh the page and try again</li>
+                                <li>Try a different date range</li>
+                                <li>Check that your evidence data is properly formatted</li>
+                            </ul>
+                            <p><strong>Technical details:</strong> ${error.toString()}</p>
+                        </div>
+                    `;
+                });
+            });
+        }
+        
+        // Event listener for the "Send to AI" button in prompt preview modal
+        if (sendPromptBtn) {
+            sendPromptBtn.addEventListener('click', function() {
+                const promptModalElement = document.getElementById('previewPromptModal');
+                let promptModal = bootstrap.Modal.getInstance(promptModalElement);
+                if (promptModal) {
+                    promptModal.hide();
+                }
+                
+                const formData = new FormData(form);
+                const startDate = formData.get('start_date');
+                const endDate = formData.get('end_date');
+                const evidenceTypes = [];
+                // Check which evidence types checkboxes are checked
+                document.querySelectorAll('input[name="evidence_types"]:checked').forEach(checkbox => {
+                    evidenceTypes.push(checkbox.value);
+                });
+                
+                // Get the edited prompt and replace placeholders with actual dates
+                let completePrompt = document.getElementById('complete_prompt').value;
+                completePrompt = completePrompt
+                    .replace('{start_date}', startDate)
+                    .replace('{end_date}', endDate);
+                
+                // Show loading state
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+                statusCard.classList.remove('d-none');
+                
+                // Send AJAX request with custom prompt
+                fetch('/generate-time-entries', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        start_date: startDate,
+                        end_date: endDate,
+                        evidence_types: evidenceTypes,
+                        custom_prompt: completePrompt
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Error generating time entries');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Same handler as the main form submission
+                    handleGenerationResponse(data);
+                })
+                .catch(error => {
+                    // Handle errors
+                    handleGenerationError(error);
+                });
+            });
+        }
+        
+        // Extract repeated code into helper functions
+        function handleGenerationResponse(data) {
+            // Hide loading state
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generate Time Entries';
+            statusCard.classList.add('d-none');
+            
+            // Check for errors
+            if (!data.success) {
+                errorMessage.textContent = data.error || 'No time entries were generated';
+                if (data.details) {
+                    errorDetails.textContent = data.details;
+                    errorDetails.parentElement.classList.remove('d-none');
+                } else {
+                    errorDetails.parentElement.classList.add('d-none');
+                }
+                errorCard.classList.remove('d-none');
+                return;
+            }
+            
+            // Process successful response
+            if (data.entries && data.entries.length > 0) {
+                // Update the count
+                entryCount.textContent = data.entries.length;
+                
+                // Create table rows for each entry
+                entriesList.innerHTML = '';
+                data.entries.forEach(entry => {
+                    const row = document.createElement('tr');
+                    
+                    // Format the date
+                    const date = new Date(entry.date);
+                    const formattedDate = date.toLocaleDateString();
+                    
+                    row.innerHTML = `
+                        <td>${entry.date}</td>
+                        <td>${entry.quantity || entry.hours || 0}</td>
+                        <td>${entry.activity_description || entry.activity_category || 'N/A'}</td>
+                        <td>${entry.note || entry.description || ''}</td>
+                        <td>$${(entry.price || entry.billable || 0).toFixed(2)}</td>
+                    `;
+                    entriesList.appendChild(row);
+                });
+                
+                // Show results
+                resultsCard.classList.remove('d-none');
+                
+                // Update links with date range
+                const startDate = document.getElementById('start_date').value;
+                const endDate = document.getElementById('end_date').value;
+                viewBtn.href = `/time-entries?start_date=${startDate}&end_date=${endDate}`;
+                exportBtn.href = `/export-time-entries?start_date=${startDate}&end_date=${endDate}`;
+            } else {
+                // Show error for no entries
+                errorMessage.textContent = 'No time entries were generated for the selected date range.';
+                errorDetails.textContent = data.details || 'There may not be sufficient evidence during this period, or all work may already be covered by existing time entries.';
+                errorDetails.parentElement.classList.remove('d-none');
+                errorCard.classList.remove('d-none');
+            }
+        }
+        
+        function handleGenerationError(error) {
+            // Hide loading state
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generate Time Entries';
+            statusCard.classList.add('d-none');
+            
+            // Show error
+            console.error('Error:', error);
+            errorMessage.textContent = error.message || 'An unexpected error occurred';
+            errorDetails.textContent = '';
+            errorCard.classList.remove('d-none');
+        }
+    });
+</script>
+{% endblock %}
