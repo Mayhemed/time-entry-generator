@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Timeline - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Timeline</h1>
+</div>
+
+<!-- Date Range Filter -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <form method="GET" action="{{ url_for('timeline') }}" class="form-inline">
+            <div class="form-group mb-2">
+                <label for="start_date" class="mr-2">Start Date</label>
+                <input type="date" name="start_date" id="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="form-group mx-sm-3 mb-2">
+                <label for="end_date" class="mr-2">End Date</label>
+                <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <button type="submit" class="btn btn-primary mb-2">Filter</button>
+        </form>
+    </div>
+</div>
+
+<!-- AI Analysis Button -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">AI Analysis</div>
+            <div class="card-body">
+                <p>Analyze the timeline to find patterns, relationships, and potential time entries.</p>
+                <div class="d-flex gap-2">
+                    <button id="analyze-month-btn" class="btn btn-info">
+                        Analyze Current Date Range with AI
+                    </button>
+                    <button id="send-to-ai-btn" class="btn btn-primary">
+                        Send Current Date Range to AI for Time Entries
+                    </button>
+                </div>
+                <div class="form-text">
+                    The AI will process evidence from {{ start_date or 'start' }} to {{ end_date or 'end' }} to find connections and suggest time entries.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="timeline">
+    {% if evidence_items %}
+        <h4 class="mb-4">Evidence Items</h4>
+        {% for item in evidence_items %}
+            <div class="timeline-item">
+                <div class="timeline-marker 
+                    {% if item.type == 'email' %}bg-primary
+                    {% elif item.type == 'sms' %}bg-success
+                    {% elif item.type == 'docket' %}bg-danger
+                    {% elif item.type == 'phone_call' %}bg-warning
+                    {% else %}bg-secondary{% endif %}"></div>
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            {{ item.type|title }} 
+                            - {{ item.timestamp|format_datetime }}
+                        </h5>
+                        <p class="card-text">
+                            {% if item.type == 'email' %}
+                                <strong>From:</strong> {{ item.from }}<br>
+                                <strong>To:</strong> {{ item.to }}<br>
+                                <strong>Subject:</strong> {{ item.subject }}<br>
+                                {{ item.body|string|truncate(120, True, '...') }}
+                            {% elif item.type == 'sms' %}
+                                <strong>{% if item.direction == 'incoming' %}From{% else %}To{% endif %}:</strong> 
+                                {{ item.sender_name or "Unknown" }}<br>
+                                {{ item.text|string|truncate(120, True, '...') }}
+                            {% elif item.type == 'docket' %}
+                                <strong>Event Type:</strong> {{ item.event_type }}<br>
+                                <strong>Filed By:</strong> {{ item.filed_by }}<br>
+                                <strong>Memo:</strong> {{ item.memo }}
+                            {% elif item.type == 'phone_call' %}
+                                <strong>{% if item.call_type == 'Incoming' %}From{% else %}To{% endif %}:</strong> 
+                                {{ item.contact }}<br>
+                                <strong>Duration:</strong> {{ item.duration_seconds // 60 }} minutes
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-secondary edit-contact-btn" 
+                                            data-phone="{{ item.number }}" 
+                                            data-id="{{ item.id }}">
+                                        Edit Contact Info
+                                    </button>
+                                </div>
+                            {% else %}
+                                <em>No additional preview</em>
+                            {% endif %}
+                        </p>
+                        <a class="btn btn-sm btn-outline-secondary" 
+                           href="{{ url_for('view_evidence', evidence_id=item.id) }}">
+                            View Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No evidence items found for the selected date range.</p>
+    {% endif %}
+</div>
+
+<hr class="my-5">
+
+<div class="timeline">
+    {% if time_entries %}
+        <h4 class="mb-4">Time Entries</h4>
+        {% for entry in time_entries %}
+            <div class="timeline-item">
+                <div class="timeline-marker bg-success"></div>
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            Time Entry 
+                            - {{ entry.date|format_datetime('%Y-%m-%d') }} 
+                            ({{ entry.hours }} hrs)
+                        </h5>
+                        <p class="card-text">
+                            <strong>Activity:</strong> {{ entry.activity_category }}<br>
+                            <strong>Description:</strong> {{ entry.description }}
+                        </p>
+                        <a class="btn btn-sm btn-outline-secondary" 
+                           href="{{ url_for('view_time_entry', entry_id=entry.id) }}">
+                            View Entry
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No time entries found for the selected date range.</p>
+    {% endif %}
+</div>
+
+<!-- Contact Edit Modal -->
+<div class="modal fade" id="editContactModal" tabindex="-1" aria-labelledby="editContactModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editContactModalLabel">Edit Contact Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-contact-form">
+                    <input type="hidden" id="evidence-id" name="evidence_id">
+                    <div class="mb-3">
+                        <label for="phone-number" class="form-label">Phone Number</label>
+                        <input type="text" class="form-control" id="phone-number" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="contact-name" class="form-label">Contact Name</label>
+                        <input type="text" class="form-control" id="contact-name" name="contact_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="contact-email" class="form-label">Email (Optional)</label>
+                        <input type="email" class="form-control" id="contact-email" name="contact_email">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-contact-btn">Save Contact</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Analysis Results Modal -->
+<div class="modal fade" id="aiAnalysisModal" tabindex="-1" aria-labelledby="aiAnalysisModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="aiAnalysisModalLabel">AI Analysis Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="analysis-loading" class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Analyzing timeline data...</p>
+                </div>
+                
+                <div id="analysis-results" style="display:none;">
+                    <ul class="nav nav-tabs" id="analysisTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="suggestions-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#suggestions-tab-pane" type="button" role="tab" 
+                                    aria-controls="suggestions-tab-pane" aria-selected="true">
+                                Suggestions
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="prompt-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#prompt-tab-pane" type="button" role="tab" 
+                                    aria-controls="prompt-tab-pane" aria-selected="false">
+                                AI Prompt
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="response-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#response-tab-pane" type="button" role="tab" 
+                                    aria-controls="response-tab-pane" aria-selected="false">
+                                Raw Response
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content p-3 border border-top-0 rounded-bottom" id="analysisTabContent">
+                        <!-- Suggestions Tab -->
+                        <div class="tab-pane fade show active" id="suggestions-tab-pane" role="tabpanel" 
+                             aria-labelledby="suggestions-tab" tabindex="0">
+                            
+                            <h5>Suggested Relationships</h5>
+                            <div id="suggested-relationships" class="mb-4"></div>
+                            
+                            <h5>Suggested Time Entries</h5>
+                            <div id="suggested-time-entries"></div>
+                        </div>
+                        
+                        <!-- Prompt Tab -->
+                        <div class="tab-pane fade" id="prompt-tab-pane" role="tabpanel" 
+                             aria-labelledby="prompt-tab" tabindex="0">
+                            <div class="alert alert-info">
+                                This is the exact prompt sent to the AI model for analysis.
+                            </div>
+                            <pre id="ai-prompt" class="bg-light p-3 rounded" 
+                                 style="max-height: 500px; overflow-y: auto;"></pre>
+                        </div>
+                        
+                        <!-- Response Tab -->
+                        <div class="tab-pane fade" id="response-tab-pane" role="tabpanel" 
+                             aria-labelledby="response-tab" tabindex="0">
+                            <div class="alert alert-info">
+                                This is the raw response received from the AI model.
+                            </div>
+                            <pre id="ai-response" class="bg-light p-3 rounded" 
+                                 style="max-height: 500px; overflow-y: auto;"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="apply-suggestions-btn" style="display:none;">
+                    Apply Selected Suggestions
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle Send to AI button
+        document.getElementById('send-to-ai-btn').addEventListener('click', function() {
+            // Get the current date range from the form
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            
+            if (!startDate || !endDate) {
+                alert('Please select a date range first');
+                return;
+            }
+            
+            // Confirm with the user
+            if (confirm(`Generate time entries for the period ${startDate} to ${endDate}?`)) {
+                // Redirect to generate entries page with the date range
+                window.location.href = `/generate-time-entries?start_date=${startDate}&end_date=${endDate}`;
+            }
+        });
+        
+        // Handle edit contact button clicks
+        document.querySelectorAll('.edit-contact-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const phoneNumber = this.getAttribute('data-phone');
+                const evidenceId = this.getAttribute('data-id');
+                
+                document.getElementById('evidence-id').value = evidenceId;
+                document.getElementById('phone-number').value = phoneNumber;
+                
+                // Optionally load existing contact data if available
+                fetch(`/api/evidence/${evidenceId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.evidence && data.evidence.contact) {
+                            document.getElementById('contact-name').value = data.evidence.contact;
+                        }
+                        if (data.evidence && data.evidence.contact_email) {
+                            document.getElementById('contact-email').value = data.evidence.contact_email;
+                        }
+                    })
+                    .catch(error => console.error('Error loading contact data:', error));
+                
+                const editContactModal = new bootstrap.Modal(document.getElementById('editContactModal'));
+                editContactModal.show();
+            });
+        });
+        
+        // Handle save contact button
+        document.getElementById('save-contact-btn').addEventListener('click', function() {
+            const form = document.getElementById('edit-contact-form');
+            const evidenceId = document.getElementById('evidence-id').value;
+            const contactName = document.getElementById('contact-name').value;
+            const contactEmail = document.getElementById('contact-email').value;
+            
+            fetch('/api/update-contact', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    evidence_id: evidenceId,
+                    contact_name: contactName,
+                    contact_email: contactEmail
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editContactModal')).hide();
+                    alert('Contact information updated successfully');
+                    // Reload the page to see the changes
+                    window.location.reload();
+                } else {
+                    alert('Error updating contact information: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating contact information');
+            });
+        });
+        
+        // Handle AI analysis
+        document.getElementById('analyze-month-btn').addEventListener('click', function() {
+            // Get the current date range from the form
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            
+            if (!startDate || !endDate) {
+                alert('Please select a date range first');
+                return;
+            }
+            
+            // Show the analysis modal
+            const aiAnalysisModal = new bootstrap.Modal(document.getElementById('aiAnalysisModal'));
+            aiAnalysisModal.show();
+            
+            // Show loading state
+            document.getElementById('analysis-loading').style.display = 'block';
+            document.getElementById('analysis-results').style.display = 'none';
+            document.getElementById('apply-suggestions-btn').style.display = 'none';
+            
+            // Call the API to analyze the timeline
+            fetch('/analyze-timeline', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    start_date: startDate,
+                    end_date: endDate
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading state
+                document.getElementById('analysis-loading').style.display = 'none';
+                document.getElementById('analysis-results').style.display = 'block';
+                
+                // Populate the results
+                const relationshipsContainer = document.getElementById('suggested-relationships');
+                const timeEntriesContainer = document.getElementById('suggested-time-entries');
+                
+                // Clear existing content
+                relationshipsContainer.innerHTML = '';
+                timeEntriesContainer.innerHTML = '';
+                
+                // Add relationships
+                if (data.relationships && data.relationships.length > 0) {
+                    const relationshipsList = document.createElement('ul');
+                    relationshipsList.className = 'list-group';
+                    
+                    data.relationships.forEach(rel => {
+                        const item = document.createElement('li');
+                        item.className = 'list-group-item';
+                        item.innerHTML = `
+                            <div class="form-check">
+                                <input class="form-check-input relationship-checkbox" type="checkbox" 
+                                       value="${rel.id}" id="rel-${rel.id}" checked>
+                                <label class="form-check-label" for="rel-${rel.id}">
+                                    ${rel.description}
+                                </label>
+                            </div>
+                        `;
+                        relationshipsList.appendChild(item);
+                    });
+                    
+                    relationshipsContainer.appendChild(relationshipsList);
+                } else {
+                    relationshipsContainer.innerHTML = '<p>No new relationships suggested</p>';
+                }
+                
+                // Add time entries
+                if (data.time_entries && data.time_entries.length > 0) {
+                    const entriesList = document.createElement('ul');
+                    entriesList.className = 'list-group';
+                    
+                    data.time_entries.forEach(entry => {
+                        const item = document.createElement('li');
+                        item.className = 'list-group-item';
+                        item.innerHTML = `
+                            <div class="form-check">
+                                <input class="form-check-input entry-checkbox" type="checkbox" 
+                                       value="${entry.id}" id="entry-${entry.id}" checked>
+                                <label class="form-check-label" for="entry-${entry.id}">
+                                    <strong>${entry.date} (${entry.hours} hrs)</strong>: ${entry.description}
+                                </label>
+                            </div>
+                        `;
+                        entriesList.appendChild(item);
+                    });
+                    
+                    timeEntriesContainer.appendChild(entriesList);
+                } else {
+                    timeEntriesContainer.innerHTML = '<p>No new time entries suggested</p>';
+                }
+                
+                // Show apply button if there are suggestions
+                if ((data.relationships && data.relationships.length > 0) || 
+                    (data.time_entries && data.time_entries.length > 0)) {
+                    document.getElementById('apply-suggestions-btn').style.display = 'block';
+                }
+                
+                // Fetch and show the log details for transparency
+                if (data.log_id) {
+                    fetch(`/api/analysis-logs/${data.log_id}`)
+                        .then(response => response.json())
+                        .then(logData => {
+                            document.getElementById('ai-prompt').textContent = logData.prompt;
+                            document.getElementById('ai-response').textContent = logData.result;
+                        })
+                        .catch(error => {
+                            console.error('Error fetching log details:', error);
+                            document.getElementById('ai-prompt').textContent = 'Error fetching prompt';
+                            document.getElementById('ai-response').textContent = 'Error fetching response';
+                        });
+                } else if (data.raw_response) {
+                    document.getElementById('ai-prompt').textContent = 'Prompt not available';
+                    document.getElementById('ai-response').textContent = data.raw_response;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('analysis-loading').style.display = 'none';
+                document.getElementById('analysis-results').style.display = 'block';
+                document.getElementById('suggested-relationships').innerHTML = `
+                    <div class="alert alert-danger">
+                        Error performing AI analysis. Please try again later.
+                    </div>
+                `;
+                document.getElementById('suggested-time-entries').innerHTML = '';
+            });
+        });
+        
+        // Handle applying suggestions
+        document.getElementById('apply-suggestions-btn').addEventListener('click', function() {
+            // Collect selected relationships
+            const selectedRelationships = Array.from(document.querySelectorAll('.relationship-checkbox:checked'))
+                .map(checkbox => checkbox.value);
+            
+            // Collect selected time entries
+            const selectedEntries = Array.from(document.querySelectorAll('.entry-checkbox:checked'))
+                .map(checkbox => checkbox.value);
+            
+            // Apply the suggestions
+            fetch('/apply-suggestions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    relationships: selectedRelationships,
+                    time_entries: selectedEntries
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('aiAnalysisModal')).hide();
+                    alert('Suggestions applied successfully');
+                    // Reload the page to see the changes
+                    window.location.reload();
+                } else {
+                    alert('Error applying suggestions: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error applying suggestions');
+            });
+        });
+    });
+</script>
+{% endblock %}

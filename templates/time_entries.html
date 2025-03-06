@@ -1,0 +1,599 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Time Entries - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Time Entries</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('generate_time_entries') }}" class="btn btn-sm btn-primary me-2">
+            Generate Entries
+        </a>
+        <a href="{{ url_for('export_time_entries') }}?{% if start_date %}start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}"
+           class="btn btn-sm btn-secondary">
+            Export to CSV
+        </a>
+    </div>
+</div>
+
+<!-- Date Range Filter -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">Filter Time Entries</div>
+            <div class="card-body">
+                <form method="GET" action="{{ url_for('time_entries') }}" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="date" name="start_date" id="start_date" class="form-control" value="{{ start_date }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="activity_type" class="form-label">Activity Type</label>
+                        <select name="activity_type" id="activity_type" class="form-select">
+                            <option value="">All Types</option>
+                            <option value="client_communication" {% if activity_type == 'client_communication' %}selected{% endif %}>Client Communication</option>
+                            <option value="legal_research" {% if activity_type == 'legal_research' %}selected{% endif %}>Legal Research</option>
+                            <option value="document_drafting" {% if activity_type == 'document_drafting' %}selected{% endif %}>Document Drafting</option>
+                            <option value="court_appearance" {% if activity_type == 'court_appearance' %}selected{% endif %}>Court Appearance</option>
+                            <option value="discovery" {% if activity_type == 'discovery' %}selected{% endif %}>Discovery</option>
+                            <option value="deposition" {% if activity_type == 'deposition' %}selected{% endif %}>Deposition</option>
+                            <option value="settlement" {% if activity_type == 'settlement' %}selected{% endif %}>Settlement</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary mb-3">Apply Filters</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Section -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">Summary</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Total Entries</h5>
+                                <h2>{{ entries|length }}</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Total Hours</h5>
+                                <h2>
+                                {% set total_hours = 0 %}
+                                {% for entry in entries %}
+                                    {% if entry.quantity is defined and entry.quantity %}
+                                        {% set total_hours = total_hours + entry.quantity %}
+                                    {% elif entry.hours is defined and entry.hours %}
+                                        {% set total_hours = total_hours + entry.hours %}
+                                    {% endif %}
+                                {% endfor %}
+                                {{ total_hours|round(1) }}
+                                </h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Total Value</h5>
+                                <h2>
+                                {% set total_value = 0 %}
+                                {% for entry in entries %}
+                                    {% if entry.price is defined and entry.price %}
+                                        {% set total_value = total_value + entry.price %}
+                                    {% elif entry.billable is defined and entry.billable %}
+                                        {% set total_value = total_value + entry.billable %}
+                                    {% endif %}
+                                {% endfor %}
+                                ${{ total_value|round(2) }}
+                                </h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Average Hours</h5>
+                                {% set total_hours = 0 %}
+                                {% for entry in entries %}
+                                    {% if entry.quantity is defined and entry.quantity %}
+                                        {% set total_hours = total_hours + entry.quantity %}
+                                    {% elif entry.hours is defined and entry.hours %}
+                                        {% set total_hours = total_hours + entry.hours %}
+                                    {% endif %}
+                                {% endfor %}
+                                <h2>{{ (total_hours / entries|length if entries|length > 0 else 0)|round(1) }}</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Time Entries</span>
+                <div class="d-flex">
+                    <button id="batchDeleteBtn" class="btn btn-sm btn-danger me-2" style="display:none;">
+                        Delete Selected
+                    </button>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="columnToggleButton" data-bs-toggle="dropdown" aria-expanded="false">
+                            Columns
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="columnToggleButton">
+                            <li><a class="dropdown-item column-toggle active" data-column="0" href="#">Select</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="1" href="#">Date</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="2" href="#">Matter</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="3" href="#">Hours</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="4" href="#">Rate</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="5" href="#">Activity Type</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="6" href="#">Activity User</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="7" href="#">Description</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="8" href="#">Billable</a></li>
+                            <li><a class="dropdown-item column-toggle active" data-column="9" href="#">Actions</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if entries %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover" id="time-entries-table">
+                        <thead>
+                            <tr>
+                                <th class="col-select">
+                                    <input type="checkbox" id="selectAll">
+                                </th>
+                                <th class="col-date">Date</th>
+                                <th class="col-matter">Matter</th>
+                                <th class="col-hours">Hours</th>
+                                <th class="col-rate">Rate</th>
+                                <th class="col-type">Activity Type</th>
+                                <th class="col-user">Activity User</th>
+                                <th class="col-description">Description</th>
+                                <th class="col-billable">Billable</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in entries %}
+                            <tr data-entry-id="{{ entry.id }}">
+                                <td class="col-select">
+                                    <input type="checkbox" class="entry-select" value="{{ entry.id }}">
+                                </td>
+                                <td class="col-date">
+                                    <span class="display-value">{{ entry.date }}</span>
+                                    <input type="date" class="form-control edit-field d-none" name="date" value="{{ entry.date }}">
+                                </td>
+                                <td class="col-matter">
+                                    <span class="display-value">{{ entry.matter|default('Default Matter') }}</span>
+                                    <input type="text" class="form-control edit-field d-none" name="matter" value="{{ entry.matter|default('Default Matter') }}">
+                                </td>
+                                <td class="col-hours">
+                                    <span class="display-value">{{ entry.quantity or entry.hours or 0 }}</span>
+                                    <input type="number" class="form-control edit-field d-none" name="quantity" value="{{ entry.quantity or entry.hours or 0 }}" step="0.1" min="0">
+                                </td>
+                                <td class="col-rate">
+                                    <span class="display-value">${{ entry.rate|default(250) }}</span>
+                                    <input type="number" class="form-control edit-field d-none" name="rate" value="{{ entry.rate|default(250) }}" step="1" min="0">
+                                </td>
+                                <td class="col-type">
+                                    <span class="display-value badge 
+                                        {% if entry.activity_category == 'client_communication' %}bg-primary
+                                        {% elif entry.activity_category == 'legal_research' %}bg-info
+                                        {% elif entry.activity_category == 'document_drafting' %}bg-success
+                                        {% elif entry.activity_category == 'court_appearance' %}bg-danger
+                                        {% elif entry.activity_category == 'discovery' %}bg-warning text-dark
+                                        {% elif entry.activity_category == 'deposition' %}bg-secondary
+                                        {% else %}bg-dark{% endif %}">
+                                        {% if entry.activity_description %}
+                                            {{ entry.activity_description|default('N/A') }}
+                                        {% else %}
+                                            {{ entry.activity_category|default('N/A')|replace('_', ' ')|title }}
+                                        {% endif %}
+                                    </span>
+                                    <select class="form-control edit-field d-none" name="activity_category">
+                                        <option value="client_communication" {% if entry.activity_category == 'client_communication' %}selected{% endif %}>Client Communication</option>
+                                        <option value="legal_research" {% if entry.activity_category == 'legal_research' %}selected{% endif %}>Legal Research</option>
+                                        <option value="document_drafting" {% if entry.activity_category == 'document_drafting' %}selected{% endif %}>Document Drafting</option>
+                                        <option value="court_appearance" {% if entry.activity_category == 'court_appearance' %}selected{% endif %}>Court Appearance</option>
+                                        <option value="discovery" {% if entry.activity_category == 'discovery' %}selected{% endif %}>Discovery</option>
+                                        <option value="deposition" {% if entry.activity_category == 'deposition' %}selected{% endif %}>Deposition</option>
+                                        <option value="settlement" {% if entry.activity_category == 'settlement' %}selected{% endif %}>Settlement</option>
+                                    </select>
+                                </td>
+                                <td class="col-user">
+                                    <span class="display-value">{{ entry.activity_user or entry.user or 'Attorney' }}</span>
+                                    <input type="text" class="form-control edit-field d-none" name="activity_user" value="{{ entry.activity_user or entry.user or 'Attorney' }}">
+                                </td>
+                                <td class="col-description">
+                                    <span class="display-value">{{ entry.note or entry.description or 'N/A' }}</span>
+                                    <textarea class="form-control edit-field d-none" name="note" rows="2">{{ entry.note or entry.description or '' }}</textarea>
+                                </td>
+                                <td class="col-billable">
+                                    <span class="display-value">${{ entry.price or entry.billable or 0 }}</span>
+                                    <input type="number" class="form-control edit-field d-none" name="price" value="{{ entry.price or entry.billable or 0 }}" step="0.01" min="0">
+                                </td>
+                                <td class="col-actions">
+                                    <div class="btn-group display-value">
+                                        <a href="{{ url_for('view_time_entry', entry_id=entry.id) }}" class="btn btn-sm btn-outline-primary">
+                                            View
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary edit-entry-btn">
+                                            Edit
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger delete-entry-btn">
+                                            Delete
+                                        </button>
+                                    </div>
+                                    <div class="btn-group edit-actions d-none">
+                                        <button type="button" class="btn btn-sm btn-success save-entry-btn">
+                                            Save
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-secondary cancel-edit-btn">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No time entries found for the selected criteria.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Column toggle functionality
+        const columnToggles = document.querySelectorAll('.column-toggle');
+        columnToggles.forEach(toggle => {
+            toggle.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Toggle active class
+                this.classList.toggle('active');
+                
+                // Get column index
+                const columnIndex = parseInt(this.getAttribute('data-column'));
+                
+                // Toggle column visibility
+                const table = document.getElementById('time-entries-table');
+                const headerCells = table.querySelectorAll('th');
+                const rows = table.querySelectorAll('tbody tr');
+                
+                // Toggle header
+                headerCells[columnIndex].style.display = this.classList.contains('active') ? '' : 'none';
+                
+                // Toggle cells in all rows
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    cells[columnIndex].style.display = this.classList.contains('active') ? '' : 'none';
+                });
+            });
+        });
+        
+        // Select all functionality
+        const selectAllCheckbox = document.getElementById('selectAll');
+        const entryCheckboxes = document.querySelectorAll('.entry-select');
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        
+        // Select all checkboxes
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const isChecked = this.checked;
+                entryCheckboxes.forEach(checkbox => {
+                    checkbox.checked = isChecked;
+                });
+                updateBatchDeleteButton();
+            });
+        }
+        
+        // Individual checkbox change
+        entryCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBatchDeleteButton);
+        });
+        
+        // Update batch delete button visibility
+        function updateBatchDeleteButton() {
+            const checkedBoxes = document.querySelectorAll('.entry-select:checked');
+            if (checkedBoxes.length > 0) {
+                batchDeleteBtn.style.display = 'block';
+            } else {
+                batchDeleteBtn.style.display = 'none';
+            }
+        }
+        
+        // Batch delete
+        if (batchDeleteBtn) {
+            batchDeleteBtn.addEventListener('click', function() {
+                const selectedIds = Array.from(
+                    document.querySelectorAll('.entry-select:checked')
+                ).map(checkbox => checkbox.value);
+                
+                if (selectedIds.length === 0) return;
+                
+                if (confirm(`Are you sure you want to delete ${selectedIds.length} time entries?`)) {
+                    deleteTimeEntries(selectedIds);
+                }
+            });
+        }
+        
+        // Delete time entries
+        function deleteTimeEntries(entryIds) {
+            // Send delete request to server
+            fetch('/api/delete-time-entries', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ entry_ids: entryIds })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to delete time entries');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Remove deleted rows from the table
+                entryIds.forEach(id => {
+                    const row = document.querySelector(`tr[data-entry-id="${id}"]`);
+                    if (row) row.remove();
+                });
+                
+                // Hide batch delete button
+                batchDeleteBtn.style.display = 'none';
+                
+                // Update summary counts
+                updateSummary();
+                
+                // Show success message
+                alert(`Successfully deleted ${entryIds.length} time entries`);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error deleting time entries: ' + error.message);
+            });
+        }
+        
+        // Single row delete
+        const deleteButtons = document.querySelectorAll('.delete-entry-btn');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const entryId = row.dataset.entryId;
+                
+                if (confirm('Are you sure you want to delete this time entry?')) {
+                    deleteTimeEntries([entryId]);
+                }
+            });
+        });
+        
+        // Edit functionality
+        const editButtons = document.querySelectorAll('.edit-entry-btn');
+        editButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                
+                // Hide display values, show edit fields
+                row.querySelectorAll('.display-value').forEach(el => {
+                    el.classList.add('d-none');
+                });
+                
+                row.querySelectorAll('.edit-field').forEach(el => {
+                    el.classList.remove('d-none');
+                });
+                
+                // Hide normal actions, show edit actions
+                row.querySelector('.edit-actions').classList.remove('d-none');
+            });
+        });
+        
+        // Cancel edit
+        const cancelButtons = document.querySelectorAll('.cancel-edit-btn');
+        cancelButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                
+                // Show display values, hide edit fields
+                row.querySelectorAll('.display-value').forEach(el => {
+                    el.classList.remove('d-none');
+                });
+                
+                row.querySelectorAll('.edit-field').forEach(el => {
+                    el.classList.add('d-none');
+                });
+                
+                // Show normal actions, hide edit actions
+                row.querySelector('.edit-actions').classList.add('d-none');
+            });
+        });
+        
+        // Save changes
+        const saveButtons = document.querySelectorAll('.save-entry-btn');
+        saveButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const entryId = row.dataset.entryId;
+                
+                // Collect all field values
+                const updateData = {
+                    id: entryId
+                };
+                
+                row.querySelectorAll('.edit-field').forEach(field => {
+                    const name = field.getAttribute('name');
+                    const value = field.value;
+                    updateData[name] = value;
+                });
+                
+                // Send update request
+                fetch('/api/update-time-entry', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updateData)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to update time entry');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update display values
+                    row.querySelector('[name="date"]').closest('td').querySelector('.display-value').textContent = 
+                        updateData.date;
+                        
+                    row.querySelector('[name="matter"]').closest('td').querySelector('.display-value').textContent = 
+                        updateData.matter;
+                        
+                    row.querySelector('[name="quantity"]').closest('td').querySelector('.display-value').textContent = 
+                        updateData.quantity;
+                        
+                    row.querySelector('[name="rate"]').closest('td').querySelector('.display-value').textContent = 
+                        '$' + updateData.rate;
+                        
+                    // Activity category is more complex - need to update badge class too
+                    const activitySelect = row.querySelector('[name="activity_category"]');
+                    const activityValue = activitySelect.value;
+                    const activityBadge = activitySelect.closest('td').querySelector('.display-value');
+                    
+                    // Update badge text
+                    activityBadge.textContent = activitySelect.options[activitySelect.selectedIndex].text;
+                    
+                    // Update badge class
+                    activityBadge.className = 'display-value badge';
+                    if (activityValue === 'client_communication') {
+                        activityBadge.classList.add('bg-primary');
+                    } else if (activityValue === 'legal_research') {
+                        activityBadge.classList.add('bg-info');
+                    } else if (activityValue === 'document_drafting') {
+                        activityBadge.classList.add('bg-success');
+                    } else if (activityValue === 'court_appearance') {
+                        activityBadge.classList.add('bg-danger');
+                    } else if (activityValue === 'discovery') {
+                        activityBadge.classList.add('bg-warning', 'text-dark');
+                    } else if (activityValue === 'deposition') {
+                        activityBadge.classList.add('bg-secondary');
+                    } else {
+                        activityBadge.classList.add('bg-dark');
+                    }
+                    
+                    row.querySelector('[name="activity_user"]').closest('td').querySelector('.display-value').textContent = 
+                        updateData.activity_user;
+                        
+                    row.querySelector('[name="note"]').closest('td').querySelector('.display-value').textContent = 
+                        updateData.note;
+                        
+                    row.querySelector('[name="price"]').closest('td').querySelector('.display-value').textContent = 
+                        '$' + updateData.price;
+                    
+                    // Return to display mode
+                    row.querySelectorAll('.display-value').forEach(el => {
+                        el.classList.remove('d-none');
+                    });
+                    
+                    row.querySelectorAll('.edit-field').forEach(el => {
+                        el.classList.add('d-none');
+                    });
+                    
+                    // Show normal actions, hide edit actions
+                    row.querySelector('.edit-actions').classList.add('d-none');
+                    
+                    // Update summary
+                    updateSummary();
+                    
+                    // Show success message
+                    alert('Time entry updated successfully');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error updating time entry: ' + error.message);
+                });
+            });
+        });
+        
+        // Function to update summary counts
+        function updateSummary() {
+            // Recalculate summary counts
+            const entries = document.querySelectorAll('#time-entries-table tbody tr');
+            
+            // Update entry count
+            const totalEntriesTitle = findByText('.card-title', 'Total Entries');
+            if (totalEntriesTitle) {
+                totalEntriesTitle.nextElementSibling.textContent = entries.length;
+            }
+            
+            // Calculate total hours
+            let totalHours = 0;
+            entries.forEach(row => {
+                const hoursText = row.querySelector('.col-hours .display-value').textContent;
+                totalHours += parseFloat(hoursText) || 0;
+            });
+            const totalHoursTitle = findByText('.card-title', 'Total Hours');
+            if (totalHoursTitle) {
+                totalHoursTitle.nextElementSibling.textContent = totalHours.toFixed(1);
+            }
+                
+            // Calculate total value
+            let totalValue = 0;
+            entries.forEach(row => {
+                const valueText = row.querySelector('.col-billable .display-value').textContent;
+                totalValue += parseFloat(valueText.replace('$', '')) || 0;
+            });
+            const totalValueTitle = findByText('.card-title', 'Total Value');
+            if (totalValueTitle) {
+                totalValueTitle.nextElementSibling.textContent = '$' + totalValue.toFixed(2);
+            }
+                
+            // Calculate average hours
+            const avgHours = entries.length > 0 ? totalHours / entries.length : 0;
+            const avgHoursTitle = findByText('.card-title', 'Average Hours');
+            if (avgHoursTitle) {
+                avgHoursTitle.nextElementSibling.textContent = avgHours.toFixed(1);
+            }
+        }
+        
+        // Helper function to find elements containing text
+        function findByText(selector, text) {
+            const elements = document.querySelectorAll(selector);
+            return Array.from(elements).find(element => 
+                element.textContent.includes(text)
+            );
+        }
+    });
+</script>
+{% endblock %}

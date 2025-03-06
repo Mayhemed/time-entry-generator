@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Evidence Details - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Evidence Details</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('timeline') }}" class="btn btn-sm btn-outline-secondary">
+            Back to Timeline
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                {{ evidence.type|title }} - {{ evidence.timestamp|format_datetime }}
+            </div>
+            <div class="card-body">
+                {# ... your existing evidence handling code ... #}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                Related Evidence
+            </div>
+            <div class="card-body">
+                {# ... table of related evidence ... #}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                Associated Time Entries
+            </div>
+            <div class="card-body">
+                {# ... table of associated time entries ... #}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

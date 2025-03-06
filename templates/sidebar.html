@@ -1,0 +1,47 @@
+<nav class="col-md-2 d-none d-md-block sidebar">
+    <div class="sidebar-sticky">
+        <h3 class="p-3">Time Entry System</h3>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">
+                    Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'timeline' %}active{% endif %}" href="{{ url_for('timeline') }}">
+                    Timeline
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'upload' %}active{% endif %}" href="{{ url_for('upload') }}">
+                    Upload Data
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'case_context' %}active{% endif %}" href="{{ url_for('case_context') }}">
+                    Case Context
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'projects' %}active{% endif %}" href="{{ url_for('projects') }}">
+                    Projects
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'enhanced_ui' %}active{% endif %}" href="{{ url_for('enhanced_ui') }}">
+                    Enhanced UI
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'time_entries' %}active{% endif %}" href="{{ url_for('time_entries') }}">
+                    Time Entries
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'generate_time_entries' %}active{% endif %}" href="{{ url_for('generate_time_entries') }}">
+                    Generate Entries
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Projects - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Projects</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button id="suggest-projects-btn" class="btn btn-sm btn-outline-secondary mr-2">
+            Suggest Projects
+        </button>
+        <button id="new-project-btn" class="btn btn-sm btn-primary">
+            New Project
+        </button>
+    </div>
+</div>
+
+<div class="row mb-4">
+    {# ... suggested projects card ... #}
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                Projects
+            </div>
+            <div class="card-body">
+                {# ... table of projects ... #}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Project Modal -->
+<div class="modal fade" id="newProjectModal" tabindex="-1" aria-labelledby="newProjectModalLabel" aria-hidden="true">
+    {# ... create project modal ... #}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // JS for new project, suggestions, etc.
+    });
+</script>
+{% endblock %}

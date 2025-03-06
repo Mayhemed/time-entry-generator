@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Time Entry Details - Time Entry Generator/Auditor
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Time Entry Details</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('time_entries') }}" class="btn btn-sm btn-outline-secondary">
+            Back to Time Entries
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    {{ entry.date|format_datetime('%A, %B %d, %Y') if entry.date else 'No date' }} - 
+                    <span class="badge 
+                        {% set activity_type = entry.activity_category or entry.type %}
+                        {% if activity_type == 'client_communication' %}bg-primary
+                        {% elif activity_type == 'legal_research' %}bg-info
+                        {% elif activity_type == 'document_drafting' %}bg-success
+                        {% elif activity_type == 'court_appearance' %}bg-danger
+                        {% elif activity_type == 'discovery' %}bg-warning text-dark
+                        {% elif activity_type == 'deposition' %}bg-secondary
+                        {% else %}bg-dark{% endif %}">
+                        {% if entry.activity_description %}
+                            {{ entry.activity_description }}
+                        {% else %}
+                            {{ activity_type|replace('_', ' ')|title }}
+                        {% endif %}
+                    </span>
+                </span>
+                {% if entry.generated %}
+                <span class="badge bg-info">AI Generated</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Matter</h5>
+                                <p class="card-text">{{ entry.matter }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Hours</h5>
+                                <p class="card-text">{{ entry.quantity or entry.hours or 0 }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Price</h5>
+                                <p class="card-text">${{ entry.price or entry.billable or 0 }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Attorney</h5>
+                                <p class="card-text">{{ entry.activity_user or entry.user or 'Attorney' }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">Description</div>
+                            <div class="card-body">
+                                <p>{{ entry.activity_description or entry.description or 'No description available' }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if entry.note or (entry.description and entry.activity_description and entry.description != entry.activity_description) %}
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">Notes</div>
+                            <div class="card-body">
+                                <p>{{ entry.note|replace('\n', '<br>')|safe or entry.description|replace('\n', '<br>')|safe }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">Supporting Evidence</div>
+            <div class="card-body">
+                {% if evidence_items %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Date</th>
+                                <th>Summary</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in evidence_items %}
+                            <tr>
+                                <td>
+                                    <span class="badge 
+                                        {% if item.type == 'email' %}bg-primary
+                                        {% elif item.type == 'sms' %}bg-success
+                                        {% elif item.type == 'docket' %}bg-danger
+                                        {% elif item.type == 'phone_call' %}bg-warning text-dark
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ item.type|title }}
+                                    </span>
+                                </td>
+                                <td>{{ item.timestamp|format_datetime if item.timestamp else 'Unknown' }}</td>
+                                <td>
+                                    {% if item.type == 'email' %}
+                                        <strong>From:</strong> {{ item.from }}<br>
+                                        <strong>To:</strong> {{ item.to }}<br>
+                                        <strong>Subject:</strong> {{ item.subject }}
+                                    {% elif item.type == 'sms' %}
+                                        <strong>{{ "From" if item.direction == "incoming" else "To" }}:</strong> 
+                                        {{ item.sender_name or "Unknown" }}<br>
+                                        {{ item.text|truncate(100) }}
+                                    {% elif item.type == 'docket' %}
+                                        <strong>Event:</strong> {{ item.event_type }}<br>
+                                        {{ item.memo|truncate(100) }}
+                                    {% elif item.type == 'phone_call' %}
+                                        <strong>Contact:</strong> {{ item.contact }}<br>
+                                        <strong>Duration:</strong> {{ item.duration_seconds // 60 }} min
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('view_evidence', evidence_id=item.id) }}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No supporting evidence linked to this time entry.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

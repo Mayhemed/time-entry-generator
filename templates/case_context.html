@@ -1,0 +1,284 @@
+{% extends 'base.html' %}
+
+{% block title %}Case Context - Time Entry Generator/Auditor{% endblock %}
+{% block header %}Case Context{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                Case Information
+            </div>
+            <div class="card-body">
+                {% if context %}
+                <div class="mb-4">
+                    <h4>{{ context.name }}</h4>
+                    <p>{{ context.description }}</p>
+                    
+                    {% if context.parties and context.parties|length > 0 %}
+                    <h5 class="mt-4">Parties</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Role</th>
+                                    <th>Contact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for party in context.parties %}
+                                <tr>
+                                    <td>{{ party.name }}</td>
+                                    <td>{{ party.role }}</td>
+                                    <td>{{ party.contact }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No case context has been set yet. Please fill out the form below.
+                </div>
+                {% endif %}
+
+                <h5>Update Case Context</h5>
+                <form method="post" id="case-context-form">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Case Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required value="{{ context.name if context else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3" required>{{ context.description if context else '' }}</textarea>
+                    </div>
+                    
+                    <!-- Hidden field for parties JSON -->
+                    <input type="hidden" id="parties" name="parties" value="{{ context.parties|tojson if context and context.parties else '[]' }}">
+                    
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Case Parties</span>
+                                <button type="button" class="btn btn-sm btn-primary" id="add-party-btn">
+                                    Add Party
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="parties-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Role</th>
+                                            <th>Contact</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="parties-list">
+                                        <!-- Will be filled by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="alert alert-info" id="no-parties-message">
+                                No parties added yet. Click "Add Party" to add case participants.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Save Context</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Party Modal -->
+<div class="modal fade" id="partyModal" tabindex="-1" aria-labelledby="partyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="partyModalLabel">Add Party</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="party-form">
+                    <input type="hidden" id="edit-index" value="-1">
+                    <div class="mb-3">
+                        <label for="party-name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="party-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="party-role" class="form-label">Role</label>
+                        <select class="form-select" id="party-role" required>
+                            <option value="">Select a role...</option>
+                            <option value="Plaintiff">Plaintiff</option>
+                            <option value="Defendant">Defendant</option>
+                            <option value="Attorney">Attorney</option>
+                            <option value="Witness">Witness</option>
+                            <option value="Expert Witness">Expert Witness</option>
+                            <option value="Judge">Judge</option>
+                            <option value="Court Staff">Court Staff</option>
+                            <option value="Third Party">Third Party</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="party-contact" class="form-label">Contact Information</label>
+                        <input type="text" class="form-control" id="party-contact" placeholder="Email, phone, or address">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-party-btn">Save Party</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize parties array from hidden field
+        let parties = [];
+        try {
+            parties = JSON.parse(document.getElementById('parties').value);
+        } catch(e) {
+            parties = [];
+        }
+        
+        // Render the parties list
+        renderPartiesList();
+        
+        // Add party button
+        document.getElementById('add-party-btn').addEventListener('click', function() {
+            // Clear the form
+            document.getElementById('party-form').reset();
+            document.getElementById('edit-index').value = '-1';
+            document.getElementById('partyModalLabel').textContent = 'Add Party';
+            
+            // Show the modal
+            const partyModal = new bootstrap.Modal(document.getElementById('partyModal'));
+            partyModal.show();
+        });
+        
+        // Save party button
+        document.getElementById('save-party-btn').addEventListener('click', function() {
+            // Get form data
+            const partyName = document.getElementById('party-name').value;
+            const partyRole = document.getElementById('party-role').value;
+            const partyContact = document.getElementById('party-contact').value;
+            const editIndex = parseInt(document.getElementById('edit-index').value);
+            
+            // Validate
+            if (!partyName || !partyRole) {
+                alert('Name and role are required');
+                return;
+            }
+            
+            // Create party object
+            const party = {
+                name: partyName,
+                role: partyRole,
+                contact: partyContact
+            };
+            
+            // Add to array or update existing
+            if (editIndex >= 0) {
+                parties[editIndex] = party;
+            } else {
+                parties.push(party);
+            }
+            
+            // Update hidden field
+            document.getElementById('parties').value = JSON.stringify(parties);
+            
+            // Refresh the list
+            renderPartiesList();
+            
+            // Close the modal
+            bootstrap.Modal.getInstance(document.getElementById('partyModal')).hide();
+        });
+        
+        // Function to render the parties list
+        function renderPartiesList() {
+            const tbody = document.getElementById('parties-list');
+            const noPartiesMessage = document.getElementById('no-parties-message');
+            
+            // Clear the list
+            tbody.innerHTML = '';
+            
+            if (parties.length > 0) {
+                // Hide the "no parties" message
+                noPartiesMessage.style.display = 'none';
+                
+                // Add each party to the table
+                parties.forEach((party, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${party.name}</td>
+                        <td>${party.role}</td>
+                        <td>${party.contact || ''}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-primary edit-party" data-index="${index}">Edit</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-party" data-index="${index}">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Add event listeners for edit and delete buttons
+                document.querySelectorAll('.edit-party').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = parseInt(this.getAttribute('data-index'));
+                        editParty(index);
+                    });
+                });
+                
+                document.querySelectorAll('.delete-party').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = parseInt(this.getAttribute('data-index'));
+                        deleteParty(index);
+                    });
+                });
+            } else {
+                // Show the "no parties" message
+                noPartiesMessage.style.display = 'block';
+            }
+        }
+        
+        // Function to edit a party
+        function editParty(index) {
+            const party = parties[index];
+            
+            // Fill the form
+            document.getElementById('party-name').value = party.name;
+            document.getElementById('party-role').value = party.role;
+            document.getElementById('party-contact').value = party.contact || '';
+            document.getElementById('edit-index').value = index;
+            document.getElementById('partyModalLabel').textContent = 'Edit Party';
+            
+            // Show the modal
+            const partyModal = new bootstrap.Modal(document.getElementById('partyModal'));
+            partyModal.show();
+        }
+        
+        // Function to delete a party
+        function deleteParty(index) {
+            if (confirm('Are you sure you want to remove this party?')) {
+                parties.splice(index, 1);
+                document.getElementById('parties').value = JSON.stringify(parties);
+                renderPartiesList();
+            }
+        }
+    });
+</script>
+{% endblock %}
