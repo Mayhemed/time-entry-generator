@@ -586,7 +586,8 @@ If the existing entries already cover all the work evidenced, respond with an em
                              system_prompt: str = None, 
                              activity_codes: str = None,
                              prompt_template: str = None,
-                             custom_prompt: str = None) -> List[Dict[str, Any]]:
+                             custom_prompt: str = None,
+                             debug_prompt: bool = False) -> Union[List[Dict[str, Any]], tuple]:
         """
         Generate time entries for an entire week with complete information
         Integrated with the UI's model selection functionality
@@ -598,8 +599,25 @@ If the existing entries already cover all the work evidenced, respond with an em
             activity_codes: Custom activity codes to use
             prompt_template: Custom prompt template to use
             custom_prompt: Complete custom prompt to bypass all templates
+            debug_prompt: Whether to return debug information including the prompt
         """
-        print("Sending to AI week of " + week_start_date)
+        # Import our debug logger
+        from data_processors import get_debug_logger
+        
+        # Create debug logger if debug_prompt is enabled
+        self.debug_logger = get_debug_logger(debug_enabled=debug_prompt)
+        self.debug_log_path = self.debug_logger.log_file if debug_prompt else None
+        
+        if debug_prompt:
+            self.debug_logger.info(f"==== Debug log for time entry generation ====")
+            self.debug_logger.info(f"Week start date: {week_start_date}")
+            self.debug_logger.info(f"Evidence types: {evidence_types}")
+            if system_prompt:
+                self.debug_logger.info(f"Custom system prompt provided: {len(system_prompt)} chars")
+            if custom_prompt:
+                self.debug_logger.info(f"Custom complete prompt provided: {len(custom_prompt)} chars")
+        
+        self.debug_logger.info("Sending to AI week of " + week_start_date)
         try:
             # Convert to datetime
             start_dt = datetime.fromisoformat(week_start_date)
@@ -666,36 +684,10 @@ If the existing entries already cover all the work evidenced, respond with an em
                 evidence_items = self.evidence_db.query_evidence(wider_filters)
                 print(f"Found {len(evidence_items)} evidence items with wider date range")
             
-            # If no real evidence is found, create dummy evidence for testing
+            # If no real evidence is found, warn but don't create dummy evidence
             if not evidence_items:
-                print("WARNING: No evidence found. Creating dummy evidence for testing.")
-                # Create some dummy evidence for test purposes
-                dummy_email = {
-                    "id": "dummy-email-1",
-                    "type": "email",
-                    "timestamp": f"{start_date}T09:30:00",
-                    "from": "client@example.com",
-                    "to": "attorney@firm.com",
-                    "subject": "Case Update",
-                    "body": "Here's an update on our case. Can we schedule a call to discuss next steps?"
-                }
-                dummy_docket = {
-                    "id": "dummy-docket-1",
-                    "type": "docket",
-                    "timestamp": f"{start_date}T14:00:00",
-                    "event_type": "Filing",
-                    "memo": "Response to Motion to Dismiss"
-                }
-                dummy_call = {
-                    "id": "dummy-phone_call-1",
-                    "type": "phone_call",
-                    "timestamp": f"{end_date}T11:15:00",
-                    "call_type": "Outgoing",
-                    "contact": "Client",
-                    "duration_seconds": 1200
-                }
-                evidence_items = [dummy_email, dummy_docket, dummy_call]
-                print(f"Created {len(evidence_items)} dummy evidence items for testing")
+                print("WARNING: No evidence found for the specified date range.")
+                self.debug_logger.warning("No evidence found in the database for this date range. Continue without evidence.")
             
             # Get existing time entries for this date range
             date_filters = {
@@ -803,45 +795,8 @@ If the existing entries already cover all the work evidenced, respond with an em
             
             # Use custom prompt template if provided
             default_prompt_template = """
-            INSTRUCTIONS:
-            1. Generate realistic and specific time entries based on the evidence
-            2. Group related activities into single entries
-            3. IMPORTANT: Categorize entries by project or docket event - always tie work back to specific legal documents, filings, or discovery activities
-            4. Use minimum billing increments of 0.1 hours (6 minutes)
-            5. Avoid duplicating existing entries
-            6. Include these fields for each entry:
-            - matter: "{matter_name}"
-            - date: "MM/DD/YYYY" format (not YYYY-MM-DD)
-            - activity_description: Must include the appropriate activity code format (e.g., "08 = Drafting")
-            - note: the description of the legal task completed, including any relevant details but details should always be setoff in such a way to make it easy to redact the details that we dont want to share
-            - price: 475 # default value
-            - quantity: Hours spent (use 0.1 increments)
-            - type: either TimeEntry or ExpenseEntry and almmost always TimeEntry unless you spot an expense and dont see it accounted for, then create an expense entry. the format is slightly dofferet and needs to be in a separaate csv so just note it elsewhere for now and print out the ones you caught separately at the end
-            - activity_user: "Mark Piesner" for attorney work, "Paralegal" for support work
-            - non_billable: 0 (assuming all are billable)
-            - evidenceids: Reference to specific evidence IDs that support this entry (as a STRING, not a list)
             
-            DOCUMENTATION PROCESS & TIME ALLOCATION:
-            1. When a document appears in the docket, create entries for:
-            - Initial drafting (1-3 weeks before filing date depending on complexity)
-            - Client review/revisions (if evident in communications)
-            - E-signing (0.2-0.3 hours)
-            - E-filing with proof of service (0.5-0.8 hours)
-            2. For extensive documents (like declarations, rfos, memos of p&a, ex parte), create multiple drafting sessions on different days
-            3. Follow these time allocation guidelines:
-            - Text messages: 0.1 hours per 2-3 messages (Format as: "[Number] text messages exchanged with client regarding -- [specific topic]")
-            - Emails: 0.3-0.8 hours depending on length/complexity
-            - Document drafting: 1.5-3.0 hours per document depending on complexity
-            - Document review: 0.5-1.5 hours depending on length
-            - Legal research: 1.0-2.0 hours when mentioned or implied
-            - Internal case review: 0.5-1.0 hour entries when strategy development is needed
-            4. For any filed document, work backward to create drafting entries on prior dates
-            - More complex filings should have multiple drafting entries spanning several days/weeks pay attention to the names od the docunents if there is v followed by a number then it shows how many drafts have been done till then
-            
-            RATE INFORMATION:
-            - Attorney rate: $475/hour for legal_research, document_drafting, court_appearance, deposition
-            - Paralegal rate: $250/hour for client_communication, administrative tasks, e-filing
-            - Discovery rate: $300/hour for discovery-related work
+
             """
             final_prompt_template = prompt_template if prompt_template else default_prompt_template
             
@@ -865,49 +820,78 @@ If the existing entries already cover all the work evidenced, respond with an em
                 user_prompt = week_prompt
             else:
                 # Standard prompt with the detailed instructions
-                user_prompt = f"""
-                Based on the evidence and case information below, generate time entries for the week of {start_date} to {end_date}.
-                
-                CASE INFORMATION:
-                {case_context}
-                
-                EVIDENCE SUMMARY:
-                There are a total of {len(evidence_items)} items for this date range.
-                Breakdown by type:
-                {json.dumps(evidence_summary, indent=2)}
-                
-                KEY DOCKET EVENTS:
-                {json.dumps(docket_summary, indent=2)}
-                
-                PROJECTS:
-                {json.dumps(project_summary, indent=2)}
-                
-                IMPORTANT DATES WITH EVIDENCE:
-                {", ".join(sorted(evidence_by_date.keys()))}
-                
-                EVIDENCE DETAIL:
-                Here is a sample of the available evidence items:
-                {json.dumps([self._summarize_evidence_item(item) for item in evidence_items[:15]], indent=2)}
-                
-                INSTRUCTIONS:
-                The time entries should include ACTUAL BILLABLE ACTIVITIES related to the evidence above.
-                YOU MUST create at least 3-5 time entries for this week, even if the evidence is minimal.
-                If evidence is limited, use your judgment to create realistic time entries that would likely
-                have occurred in relation to the evidence you do see.
-                
-                EXISTING TIME ENTRIES:
-                {json.dumps(existing_entries, indent=2)}
-                
-                {final_activity_codes}
-                
-                {final_prompt_template.format(matter_name=matter_name)}
-                
-                RESPONSE FORMAT:
-                Return a JSON array of time entry objects that exactly match these field names. 
-                Make sure the "note" field is ALWAYS a STRING, not a list.
-                
-                IMPORTANT: Only include the JSON array in your response, no other text.
-                """
+                if not evidence_items:
+                    # Create a modified prompt for when no evidence is available
+                    user_prompt = f"""
+                    Based on the case information below, generate time entries for the week of {start_date} to {end_date}.
+                    
+                    CASE INFORMATION:
+                    {case_context}
+                    
+                    EVIDENCE SUMMARY:
+                    NO EVIDENCE ITEMS FOUND FOR THIS DATE RANGE. 
+                    
+                    EXISTING TIME ENTRIES:
+                    {json.dumps(existing_entries, indent=2)}
+                    
+                    {final_activity_codes}
+                    
+                    {final_prompt_template.format(matter_name=matter_name)}
+                    
+                    INSTRUCTIONS:
+                    Since no evidence is available for this date range, please return an empty JSON array: []
+                    Do not make up any time entries without evidence. Only return empty array.
+                    
+                    RESPONSE FORMAT:
+                    Return an empty JSON array: []
+                    
+                    IMPORTANT: Only include the JSON array in your response, no other text.
+                    """
+                else:
+                    # Standard prompt with the detailed instructions and evidence
+                    user_prompt = f"""
+                    Based on the evidence and case information below, generate time entries for the week of {start_date} to {end_date}.
+                    
+                    CASE INFORMATION:
+                    {case_context}
+                    
+                    EVIDENCE SUMMARY:
+                    There are a total of {len(evidence_items)} items for this date range.
+                    Breakdown by type:
+                    {json.dumps(evidence_summary, indent=2)}
+                    
+                    KEY DOCKET EVENTS:
+                    {json.dumps(docket_summary, indent=2)}
+                    
+                    PROJECTS:
+                    {json.dumps(project_summary, indent=2)}
+                    
+                    IMPORTANT DATES WITH EVIDENCE:
+                    {", ".join(sorted(evidence_by_date.keys()))}
+                    
+                    EVIDENCE DETAIL:
+                    Here is a sample of the available evidence items:
+                    {json.dumps([self._summarize_evidence_item(item) for item in evidence_items[:15]], indent=2)}
+                    
+                    INSTRUCTIONS:
+                    The time entries should include ACTUAL BILLABLE ACTIVITIES related to the evidence above.
+                    YOU MUST create at least 3-5 time entries for this week, even if the evidence is minimal.
+                    If evidence is limited, use your judgment to create realistic time entries that would likely
+                    have occurred in relation to the evidence you do see.
+                    
+                    EXISTING TIME ENTRIES:
+                    {json.dumps(existing_entries, indent=2)}
+                    
+                    {final_activity_codes}
+                    
+                    {final_prompt_template.format(matter_name=matter_name)}
+                    
+                    RESPONSE FORMAT:
+                    Return a JSON array of time entry objects that exactly match these field names. 
+                    Make sure the "note" field is ALWAYS a STRING, not a list.
+                    
+                    IMPORTANT: Only include the JSON array in your response, no other text.
+                    """
 
             # Debug info about client and settings
             print("\n=== LLM CLIENT INFO ===")
@@ -962,11 +946,35 @@ If the existing entries already cover all the work evidenced, respond with an em
                     # We'll use fallback approach via LLM directly
                 
                 # Log the prompt for debugging
-                print("\n=== SENDING PROMPT TO API ===")
-                print(f"System prompt (first 100 chars): {final_system_prompt[:100]}...")
-                print(f"User prompt (first 200 chars): {user_prompt[:200]}...")
-                print(f"Full prompt length: {len(user_prompt)}")
-                print("=== END PROMPT ===\n")
+                self.debug_logger.info("\n=== SENDING PROMPT TO API ===")
+                self.debug_logger.info(f"System prompt (first 100 chars): {final_system_prompt[:100]}...")
+                self.debug_logger.info(f"User prompt (first 200 chars): {user_prompt[:200]}...")
+                self.debug_logger.info(f"Full prompt length: {len(user_prompt)}")
+                self.debug_logger.info("=== END PROMPT ===\n")
+                
+                # Save prompt for debugging if requested
+                prompt_debug_info = None
+                if debug_prompt:
+                    prompt_debug_info = {
+                        "system_prompt": final_system_prompt,
+                        "user_prompt": user_prompt,
+                        "model": model_id,
+                        "provider": provider,
+                        "temperature": temperature
+                    }
+                    self.debug_logger.info("Debug mode enabled - saving prompt for debugging")
+                    
+                    # Log complete prompt and evidence to files
+                    self.debug_logger.log_api_request(
+                        model=model_id,
+                        prompt=user_prompt,
+                        system_prompt=final_system_prompt,
+                        temperature=temperature,
+                        provider=provider
+                    )
+                    
+                    # Log evidence items
+                    self.debug_logger.log_evidence(evidence_items)
                 
                 # Call the appropriate API
                 if self.llm_client:
@@ -1005,8 +1013,15 @@ If the existing entries already cover all the work evidenced, respond with an em
                     # Extract the result
                     result = response.choices[0].message.content
                 
-                print(f"Received response of length: {len(result)}")
-                print(f"Response (first 300 chars): {result[:300]}")
+                self.debug_logger.info(f"Received response of length: {len(result)}")
+                self.debug_logger.info(f"Response (first 300 chars): {result[:300]}")
+                
+                # Store response for debugging if requested
+                if debug_prompt and prompt_debug_info:
+                    prompt_debug_info["response"] = result[:1000] + "..." if len(result) > 1000 else result
+                    
+                    # Log complete response to file
+                    self.debug_logger.log_api_response(result)
                 
             except Exception as e:
                 print(f"Error in API call: {str(e)}")
@@ -1029,49 +1044,14 @@ If the existing entries already cover all the work evidenced, respond with an em
                     result = result.rsplit('```', 1)[0]
                 result = result.strip()
                 
-                # If we got an empty array, insert dummy data to ensure something is generated
+                # If we got an empty array, that's fine when there's no evidence
                 if result == "[]" or result == "":
-                    print("WARNING: API returned empty array. Creating fallback entries.")
-                    # Return a minimal set of time entries to ensure something useful is generated
-                    fallback_entries = [
-                        {
-                            "matter": "Default Legal Matter",
-                            "date": start_date.split('T')[0].replace('-', '/'),  # Convert to MM/DD/YYYY
-                            "activity_description": "08 = Drafting",
-                            "note": "Draft legal memorandum based on recent case developments",
-                            "price": 475,
-                            "quantity": 2.5,
-                            "type": "TimeEntry",
-                            "activity_user": "Mark Piesner",
-                            "non_billable": 0,
-                            "evidenceids": ""
-                        },
-                        {
-                            "matter": "Default Legal Matter",
-                            "date": datetime.fromisoformat(start_date).date().replace(day=datetime.fromisoformat(start_date).day+1).strftime("%m/%d/%Y"),
-                            "activity_description": "02 = Communication with Client",
-                            "note": "Client conference call regarding case strategy and upcoming deadlines",
-                            "price": 475,
-                            "quantity": 1.0,
-                            "type": "TimeEntry",
-                            "activity_user": "Mark Piesner",
-                            "non_billable": 0,
-                            "evidenceids": ""
-                        },
-                        {
-                            "matter": "Default Legal Matter",
-                            "date": datetime.fromisoformat(end_date).date().replace(day=datetime.fromisoformat(end_date).day-1).strftime("%m/%d/%Y"),
-                            "activity_description": "23 = Research",
-                            "note": "Legal research on applicable precedents for upcoming motion",
-                            "price": 475,
-                            "quantity": 1.8,
-                            "type": "TimeEntry",
-                            "activity_user": "Mark Piesner",
-                            "non_billable": 0,
-                            "evidenceids": ""
-                        }
-                    ]
-                    return fallback_entries
+                    print("API returned empty array, likely due to lack of evidence.")
+                    if not evidence_items:
+                        print("This is expected since no evidence was found for the date range.")
+                        return []
+                    else:
+                        self.debug_logger.warning("API returned empty array despite having evidence items.")
                 
                 # Try to extract JSON if it's wrapped in text
                 if not result.startswith('[') and not result.startswith('{'):
@@ -1094,35 +1074,15 @@ If the existing entries already cover all the work evidenced, respond with an em
                     print(f"JSON parsing error: {json_err}")
                     print(f"Invalid JSON (first 500 chars): {result[:500]}")
                     
-                    # Create fallback entries instead of raising error
-                    print("Creating fallback entries due to JSON parsing error")
-                    fallback_entries = [
-                        {
-                            "matter": "Default Legal Matter",
-                            "date": start_date.split('T')[0].replace('-', '/'),  # Convert to MM/DD/YYYY
-                            "activity_description": "08 = Drafting",
-                            "note": "Draft legal memorandum based on recent case developments",
-                            "price": 475,
-                            "quantity": 2.5,
-                            "type": "TimeEntry",
-                            "activity_user": "Mark Piesner",
-                            "non_billable": 0,
-                            "evidenceids": ""
-                        },
-                        {
-                            "matter": "Default Legal Matter",
-                            "date": datetime.fromisoformat(start_date).date().replace(day=datetime.fromisoformat(start_date).day+1).strftime("%m/%d/%Y"),
-                            "activity_description": "02 = Communication with Client",
-                            "note": "Client conference call regarding case strategy and upcoming deadlines",
-                            "price": 475,
-                            "quantity": 1.0,
-                            "type": "TimeEntry",
-                            "activity_user": "Mark Piesner",
-                            "non_billable": 0,
-                            "evidenceids": ""
-                        }
-                    ]
-                    entries = fallback_entries
+                    # Log the error and return empty array instead of creating fallback entries
+                    print("JSON parsing error - cannot create entries from invalid response")
+                    self.debug_logger.error(f"Could not parse API response: {str(json_err)}")
+                    entries = []
+                    
+                    # Store error in debug info if requested
+                    if debug_prompt and prompt_debug_info:
+                        prompt_debug_info["error"] = str(json_err)
+                        prompt_debug_info["invalid_json"] = result[:500] + "..." if len(result) > 500 else result
                 
                 # Process entries to ensure they have all required fields and correct format
                 processed_entries = []
@@ -1241,6 +1201,19 @@ If the existing entries already cover all the work evidenced, respond with an em
                             print(f"Error processing evidence IDs: {e}")
                             processed_entry['evidenceids'] = ""
                 
+                # Log generated time entries
+                if debug_prompt:
+                    self.debug_logger.info(f"Successfully generated {len(processed_entries)} time entries")
+                    self.debug_logger.log_time_entries(processed_entries)
+                    self.debug_logger.info(f"Full debug log available at: {self.debug_log_path}")
+                
+                # Return debug info if requested
+                if debug_prompt and prompt_debug_info:
+                    # Add log file path to debug info
+                    prompt_debug_info["debug_log_path"] = self.debug_log_path
+                    self.debug_logger.info("Returning entries with debug info")
+                    return (processed_entries, prompt_debug_info)
+                
                 return processed_entries
                 
             except Exception as e:
@@ -1258,7 +1231,9 @@ If the existing entries already cover all the work evidenced, respond with an em
                                   system_prompt: str = None, 
                                   activity_codes: str = None,
                                   prompt_template: str = None,
-                                  custom_prompt: str = None) -> List[Dict[str, Any]]:
+                                  custom_prompt: str = None,
+                                  period_days: int = 7,
+                                  debug_prompt: bool = False) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Generate time entries for a date range
         
@@ -1270,52 +1245,195 @@ If the existing entries already cover all the work evidenced, respond with an em
             activity_codes: Custom activity codes to use
             prompt_template: Custom prompt template to use
             custom_prompt: Complete custom prompt to bypass all templates
+            period_days: Number of days per processing period
+            debug_prompt: Whether to save and return the final prompt for debugging
             
         Returns:
-            List of generated time entries
+            List of generated time entries or dict with entries and debug info
         """
         print(f"Generating time entries for date range {start_date} to {end_date}")
         print(f"Evidence types: {evidence_types}")
         
+        # Debug information collection
+        debug_info = {
+            "date_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "evidence_types": evidence_types,
+            "period_days": period_days,
+            "prompts": [],
+            "evidence_samples": [],
+            "processing_periods": []
+        }
+        
+        # Verify evidence retrieval
+        if debug_prompt:
+            # Check each evidence type to confirm we're getting data
+            for evidence_type in evidence_types or ["email", "sms", "phone_call", "docket"]:
+                filters = {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'type': evidence_type
+                }
+                evidence_items = self.evidence_db.query_evidence(filters)
+                
+                # Store sample for debugging
+                if evidence_items:
+                    # Get a sample (max 3) for debugging
+                    sample = []
+                    for item in evidence_items[:3]:
+                        # Create a safe copy without any problematic large fields
+                        safe_item = {}
+                        for key, value in item.items():
+                            if key in ['id', 'type', 'timestamp', 'from', 'to', 'subject']:
+                                safe_item[key] = value
+                            elif key == 'body' and isinstance(value, str):
+                                safe_item[key] = value[:150] + '...' if len(value) > 150 else value
+                            # Exclude large fields or complex objects
+                        sample.append(safe_item)
+                    
+                    debug_info["evidence_samples"].append({
+                        "type": evidence_type,
+                        "count": len(evidence_items),
+                        "sample": sample
+                    })
+                    
+                print(f"Found {len(evidence_items)} items of type {evidence_type}")
+        
         # Use custom_prompt if provided (complete override)
         if custom_prompt:
             print("Using custom prompt for generation")
-            return self._generate_with_custom_prompt(start_date, end_date, custom_prompt, evidence_types)
+            result = self._generate_with_custom_prompt(
+                start_date, 
+                end_date, 
+                custom_prompt, 
+                evidence_types, 
+                debug_prompt=debug_prompt
+            )
+            
+            # If debugging and the result contains debug info
+            if debug_prompt and isinstance(result, tuple) and len(result) == 2:
+                entries, prompt_debug_info = result
+                debug_info["custom_prompt"] = prompt_debug_info
+                return {
+                    "entries": entries,
+                    "debug_info": debug_info
+                }
+            
+            return result
         
         # Convert to datetime for date manipulation
         start_dt = datetime.fromisoformat(start_date)
         end_dt = datetime.fromisoformat(end_date)
         
         all_entries = []
+        all_prompts = []
         
-        # Process week by week
+        # Process in periods of specified days
         current_date = start_dt
+        period_index = 1
+        
         while current_date <= end_dt:
-            # Find the start of the week (Monday)
-            week_start = current_date - timedelta(days=current_date.weekday())
-            if week_start < start_dt:
-                week_start = start_dt
+            if period_days == 7:
+                # Use weekly alignment for 7-day periods
+                period_start = current_date - timedelta(days=current_date.weekday())
+                if period_start < start_dt:
+                    period_start = start_dt
+            else:
+                # Just use the current date as period start
+                period_start = current_date
             
-            # Generate entries for this week with custom prompts if provided
-            entries = self.generate_weekly_entries(
-                week_start.isoformat(),
-                evidence_types=evidence_types,
-                system_prompt=system_prompt,
-                activity_codes=activity_codes,
-                prompt_template=prompt_template
-            )
-            all_entries.extend(entries)
+            # Calculate period end
+            period_end = period_start + timedelta(days=period_days-1)
+            if period_end > end_dt:
+                period_end = end_dt
             
-            # Move to the next week
-            current_date += timedelta(days=7)
+            debug_info["processing_periods"].append({
+                "period_index": period_index,
+                "start_date": period_start.isoformat(),
+                "end_date": period_end.isoformat()
+            })
+            
+            # Generate entries for this period 
+            print(f"Processing period {period_index}: {period_start.isoformat()} to {period_end.isoformat()}")
+            
+            # Generate entries for this period
+            try:
+                period_result = self.generate_weekly_entries(
+                    period_start.isoformat(),
+                    evidence_types=evidence_types,
+                    system_prompt=system_prompt,
+                    activity_codes=activity_codes,
+                    prompt_template=prompt_template,
+                    debug_prompt=debug_prompt
+                )
+            except Exception as e:
+                print(f"Error generating time entries for period {period_index}: {e}")
+                # Continue to next period rather than failing completely
+                period_result = []
+            
+            # Handle debug information if returned
+            if debug_prompt and isinstance(period_result, tuple) and len(period_result) == 2:
+                entries, prompt = period_result
+                all_prompts.append({
+                    "period_index": period_index,
+                    "period": f"{period_start.isoformat()} to {period_end.isoformat()}",
+                    "prompt": prompt
+                })
+                all_entries.extend(entries)
+            else:
+                all_entries.extend(period_result)
+            
+            # Move to the next period
+            current_date = period_start + timedelta(days=period_days)
+            period_index += 1
+            
+            # Safety check to prevent infinite loops
+            if period_index > 100:
+                print("WARNING: Too many periods, possible infinite loop. Exiting.")
+                break
+        
+        # Return with debug info if requested
+        if debug_prompt:
+            debug_info["prompts"] = all_prompts
+            return {
+                "entries": all_entries,
+                "debug_info": debug_info
+            }
         
         return all_entries
         
     def _generate_with_custom_prompt(self, start_date: str, end_date: str, 
                                    custom_prompt: str, 
-                                   evidence_types: List[str] = None) -> List[Dict[str, Any]]:
-        """Generate time entries using a completely custom prompt"""
+                                   evidence_types: List[str] = None,
+                                   debug_prompt: bool = False) -> Union[List[Dict[str, Any]], tuple]:
+        """
+        Generate time entries using a completely custom prompt
+        
+        Args:
+            start_date: Start date in ISO format
+            end_date: End date in ISO format
+            custom_prompt: Complete custom prompt to use
+            evidence_types: List of evidence types to include
+            debug_prompt: Whether to return debug information
+            
+        Returns:
+            List of time entries or tuple of (entries, debug_info) if debug_prompt=True
+        """
         try:
+            # Debug information collection
+            debug_info = {
+                "custom_prompt": custom_prompt,
+                "start_date": start_date,
+                "end_date": end_date,
+                "evidence_types": evidence_types,
+                "evidence_counts": {},
+                "evidence_samples": [],
+                "final_prompt": "",
+                "api_response": ""
+            }
+            
             # Get evidence for the date range, filtered by requested types
             filters = {
                 'start_date': start_date,
@@ -1329,10 +1447,45 @@ If the existing entries already cover all the work evidenced, respond with an em
                     type_filters = filters.copy()
                     type_filters['type'] = evidence_type
                     type_evidence = self.evidence_db.query_evidence(type_filters)
+                    
+                    if debug_prompt:
+                        debug_info["evidence_counts"][evidence_type] = len(type_evidence)
+                        # Store sample for debugging
+                        if type_evidence:
+                            # Get a sample (max 3) for debugging
+                            sample = []
+                            for item in type_evidence[:3]:
+                                # Create a safe copy without any problematic large fields
+                                safe_item = {}
+                                for key, value in item.items():
+                                    if key in ['id', 'type', 'timestamp', 'from', 'to', 'subject']:
+                                        safe_item[key] = value
+                                    elif key == 'body' and isinstance(value, str):
+                                        safe_item[key] = value[:150] + '...' if len(value) > 150 else value
+                                    # Exclude large fields or complex objects
+                                sample.append(safe_item)
+                            
+                            debug_info["evidence_samples"].append({
+                                "type": evidence_type,
+                                "count": len(type_evidence),
+                                "sample": sample
+                            })
+                    
                     evidence_items.extend(type_evidence)
+                    print(f"Found {len(type_evidence)} items of type {evidence_type}")
             else:
                 # Get all evidence
                 evidence_items = self.evidence_db.query_evidence(filters)
+                
+                if debug_prompt:
+                    # Count by type for debugging
+                    type_counts = {}
+                    for item in evidence_items:
+                        item_type = item.get('type', 'unknown')
+                        if item_type not in type_counts:
+                            type_counts[item_type] = 0
+                        type_counts[item_type] += 1
+                    debug_info["evidence_counts"] = type_counts
             
             print(f"Found {len(evidence_items)} evidence items for date range")
             
@@ -1350,6 +1503,16 @@ If the existing entries already cover all the work evidenced, respond with an em
             # Get case context
             case_context = self.get_case_context()
             
+            # Prepare the final prompt - replace placeholders with actual values
+            final_prompt = custom_prompt
+            final_prompt = final_prompt.replace("{start_date}", start_date)
+            final_prompt = final_prompt.replace("{end_date}", end_date)
+            
+            # Store the final prompt for debugging
+            if debug_prompt:
+                debug_info["final_prompt"] = final_prompt
+                print("Debug mode enabled - saving prompt for debugging")
+            
             # Call the API with the custom prompt
             if hasattr(self, 'llm_client') and self.llm_client:
                 # Use client if available
@@ -1363,7 +1526,7 @@ If the existing entries already cover all the work evidenced, respond with an em
                 result = self.llm_client.generate_text(
                     model_id=model_id,
                     provider=provider,
-                    prompt=custom_prompt,
+                    prompt=final_prompt,
                     system_prompt="You are a legal billing specialist generating time entries based on evidence.",
                     temperature=temperature,
                     max_tokens=2000
@@ -1378,13 +1541,21 @@ If the existing entries already cover all the work evidenced, respond with an em
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "You are a legal billing specialist generating time entries based on evidence."},
-                        {"role": "user", "content": custom_prompt}
+                        {"role": "user", "content": final_prompt}
                     ],
                     temperature=0.7,
                     max_tokens=2000
                 )
                 
                 result = response.choices[0].message.content
+                
+            # Store the raw API response for debugging
+            if debug_prompt:
+                # Truncate if too long
+                if len(result) > 2000:
+                    debug_info["api_response"] = result[:2000] + "... [truncated]"
+                else:
+                    debug_info["api_response"] = result
             
             # Parse the result
             try:
@@ -1461,14 +1632,39 @@ If the existing entries already cover all the work evidenced, respond with an em
                     
                     processed_entries.append(processed_entry)
                 
+                # Return with debug info if requested
+                if debug_prompt:
+                    return (processed_entries, debug_info)
+                    
                 return processed_entries
             except Exception as e:
                 print(f"Error parsing response: {e}")
                 print(f"Raw response: {result}")
+                
+                # Include error in debug info
+                if debug_prompt:
+                    debug_info["error"] = str(e)
+                    return ([], debug_info)
+                    
                 return []
                 
         except Exception as e:
             print(f"Error generating time entries with custom prompt: {e}")
+            
+            # Include error in debug info
+            if debug_prompt:
+                if not 'debug_info' in locals():
+                    debug_info = {
+                        "error": str(e),
+                        "custom_prompt": custom_prompt,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "evidence_types": evidence_types
+                    }
+                else:
+                    debug_info["error"] = str(e)
+                return ([], debug_info)
+                
             return []
          
     def export_time_entries(self, output_path: str, start_date: Optional[str] = None, 
@@ -2027,6 +2223,29 @@ If the existing entries already cover all the work evidenced, respond with an em
         print(f"Successfully extracted {len(entries)} time entries from text")
         return entries
 
+    def generate_entries_for_period(self, start_date: str, end_date: str, 
+                                evidence_types: List[str] = None, 
+                                custom_prompt: str = None) -> List[Dict[str, Any]]:
+        """
+        Generate time entries for a specific period
+        
+        Args:
+            start_date: Start date in ISO format
+            end_date: End date in ISO format
+            evidence_types: List of evidence types to include
+            custom_prompt: Custom prompt to use
+            
+        Returns:
+            List of generated time entries
+        """
+        # Use the existing _generate_with_custom_prompt method
+        return self._generate_with_custom_prompt(
+            start_date=start_date,
+            end_date=end_date,
+            custom_prompt=custom_prompt,
+            evidence_types=evidence_types
+        )
+        
     def _format_evidence_for_analysis(self, evidence_items: List[Dict[str, Any]]) -> str:
         """Format evidence items for analysis by the LLM"""
         # Sort by timestamp

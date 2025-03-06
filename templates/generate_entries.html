@@ -31,7 +31,31 @@
                         <label for="end_date" class="form-label">End Date</label>
                         <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}" required>
                     </div>
+                    <div class="col-md-2">
+                        <label for="period_days" class="form-label">Days Per Period</label>
+                        <select class="form-select" id="period_days" name="period_days">
+                            <option value="1">1 day</option>
+                            <option value="2">2 days</option>
+                            <option value="3">3 days</option>
+                            <option value="5">5 days (work week)</option>
+                            <option value="7" selected>7 days (weekly)</option>
+                            <option value="14">14 days (bi-weekly)</option>
+                            <option value="30">30 days (monthly)</option>
+                        </select>
+                        <div class="form-text">Choose how many days to process at once.</div>
+                    </div>
                     <div class="col-md-4">
+                        <label for="ai_model" class="form-label">AI Model</label>
+                        <select class="form-select" id="ai_model" name="ai_model">
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast)</option>
+                            <option value="gpt-4o">GPT-4o (Large Context)</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo (Higher Quality)</option>
+                            <option value="claude-3-opus-20240229">Claude 3 Opus (Highest Quality)</option>
+                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (Balanced)</option>
+                        </select>
+                        <div class="form-text">Models with larger context can handle more evidence.</div>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">Evidence Types to Include</label>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" value="email" id="evidence_email" name="evidence_types" checked>
@@ -122,6 +146,12 @@
                                             <input class="form-check-input" type="checkbox" value="1" id="preview_prompt" name="preview_prompt">
                                             <label class="form-check-label" for="preview_prompt">
                                                 Preview the complete prompt before sending
+                                            </label>
+                                        </div>
+                                        <div class="form-check mb-3">
+                                            <input class="form-check-input" type="checkbox" value="1" id="debug_prompt" name="debug_prompt">
+                                            <label class="form-check-label" for="debug_prompt">
+                                                Return detailed debug information (evidence samples, prompts, AI response)
                                             </label>
                                         </div>
                                     </div>
@@ -256,6 +286,7 @@
                                             <p><strong>Start Date:</strong> <span id="evidence-start-date"></span></p>
                                             <p><strong>End Date:</strong> <span id="evidence-end-date"></span></p>
                                             <p><strong>Total Days:</strong> <span id="evidence-total-days"></span></p>
+                                            <p><strong>Processing Period:</strong> <span id="evidence-period-days">7 days (weekly)</span></p>
                                         </div>
                                     </div>
                                 </div>
@@ -443,7 +474,10 @@
                     evidence_types: evidenceTypes,
                     system_prompt: formData.get('system_prompt'),
                     activity_codes: formData.get('activity_codes'),
-                    prompt_template: formData.get('prompt_template')
+                    prompt_template: formData.get('prompt_template'),
+                    period_days: parseInt(formData.get('period_days') || 7),
+                    debug_prompt: formData.get('debug_prompt') === "1",
+                    ai_model: formData.get('ai_model')
                 };
                 
                 // Send AJAX request
@@ -486,8 +520,15 @@
             
             // Construct the complete prompt that would be sent to the AI
             let completePrompt = `${systemPrompt}\n\n${activityCodes}\n\n${promptTemplate}\n\n`;
+            const periodDays = parseInt(formData.get('period_days') || 7);
+            const debugPrompt = formData.get('debug_prompt') === "1";
             completePrompt += `Date Range: {start_date} to {end_date}\n`;
-            completePrompt += `Evidence Types: ${evidenceTypes.join(', ')}\n\n`;
+            completePrompt += `Evidence Types: ${evidenceTypes.join(', ')}\n`;
+            completePrompt += `Period Days: ${periodDays} days\n`;
+            if (debugPrompt) {
+                completePrompt += `Debug Mode: Enabled\n`;
+            }
+            completePrompt += `\n`;
             completePrompt += `IMPORTANT: Please return your response in JSON format. The response must be a valid JSON array of time entry objects, without any additional text. Each entry should include fields for date, activity_description, note, price, quantity, etc. Example format:
 [
   {
@@ -803,9 +844,31 @@ Please create time entries based on the evidence provided and return them in thi
                         console.warn("Could not format end date:", e);
                     }
                     
+                    // Get the selected period days
+                    const periodDays = parseInt(formData.get('period_days') || 7);
+                    
                     // Populate date range info
                     document.getElementById('evidence-start-date').textContent = formattedStartDate;
                     document.getElementById('evidence-end-date').textContent = formattedEndDate;
+                    
+                    // Update period days info
+                    const periodElement = document.getElementById('evidence-period-days');
+                    if (periodElement) {
+                        // Format the period text
+                        let periodText = `${periodDays} days`;
+                        if (periodDays === 1) {
+                            periodText = '1 day';
+                        } else if (periodDays === 7) {
+                            periodText = '7 days (weekly)';
+                        } else if (periodDays === 14) {
+                            periodText = '14 days (bi-weekly)';
+                        } else if (periodDays === 30) {
+                            periodText = '30 days (monthly)';
+                        } else if (periodDays === 5) {
+                            periodText = '5 days (work week)';
+                        }
+                        periodElement.textContent = periodText;
+                    }
                     
                     // Calculate total days - handle potential date parsing errors
                     let diffDays = 0;
@@ -892,7 +955,10 @@ Please create time entries based on the evidence provided and return them in thi
                         start_date: startDate,
                         end_date: endDate,
                         evidence_types: evidenceTypes,
-                        custom_prompt: completePrompt
+                        custom_prompt: completePrompt,
+                        period_days: parseInt(formData.get('period_days') || 7),
+                        debug_prompt: formData.get('debug_prompt') === "1",
+                        ai_model: formData.get('ai_model')
                     })
                 })
                 .then(response => {
@@ -920,6 +986,119 @@ Please create time entries based on the evidence provided and return them in thi
             generateBtn.disabled = false;
             generateBtn.innerHTML = 'Generate Time Entries';
             statusCard.classList.add('d-none');
+            
+            // Check for debug information
+            if (data.debug_info) {
+                console.log("Debug information received:", data.debug_info);
+                
+                // If the user checked the debug checkbox, show debug information in a more visible way
+                if (document.getElementById('debug_prompt').checked) {
+                    // Create a debug section in the UI
+                    let debugCard = document.getElementById('debug-info-card');
+                    if (!debugCard) {
+                        debugCard = document.createElement('div');
+                        debugCard.id = 'debug-info-card';
+                        debugCard.className = 'card mt-4';
+                        debugCard.innerHTML = `
+                            <div class="card-header bg-info text-white">Debug Information</div>
+                            <div class="card-body">
+                                <div class="accordion" id="debugAccordion">
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="headingPrompt">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                                data-bs-target="#collapsePrompt" aria-expanded="false" aria-controls="collapsePrompt">
+                                                AI Prompt
+                                            </button>
+                                        </h2>
+                                        <div id="collapsePrompt" class="accordion-collapse collapse" aria-labelledby="headingPrompt" 
+                                            data-bs-parent="#debugAccordion">
+                                            <div class="accordion-body">
+                                                <pre id="debug-prompt" class="bg-light p-3"></pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="headingEvidence">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                                data-bs-target="#collapseEvidence" aria-expanded="false" aria-controls="collapseEvidence">
+                                                Evidence Samples
+                                            </button>
+                                        </h2>
+                                        <div id="collapseEvidence" class="accordion-collapse collapse" aria-labelledby="headingEvidence" 
+                                            data-bs-parent="#debugAccordion">
+                                            <div class="accordion-body">
+                                                <pre id="debug-evidence" class="bg-light p-3"></pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="headingResponse">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                                data-bs-target="#collapseResponse" aria-expanded="false" aria-controls="collapseResponse">
+                                                AI Response
+                                            </button>
+                                        </h2>
+                                        <div id="collapseResponse" class="accordion-collapse collapse" aria-labelledby="headingResponse" 
+                                            data-bs-parent="#debugAccordion">
+                                            <div class="accordion-body">
+                                                <pre id="debug-response" class="bg-light p-3"></pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        document.querySelector('.col-md-12').appendChild(debugCard);
+                    }
+                    
+                    // Fill in the debug information
+                    if (data.debug_info.final_prompt || data.debug_info.prompts) {
+                        let promptText = '';
+                        if (data.debug_info.final_prompt) {
+                            promptText = data.debug_info.final_prompt;
+                        } else if (data.debug_info.prompts && data.debug_info.prompts.length > 0) {
+                            promptText = data.debug_info.prompts.map(p => 
+                                `Period: ${p.period}\n\n${p.prompt}`
+                            ).join('\n\n---\n\n');
+                        }
+                        document.getElementById('debug-prompt').textContent = promptText;
+                    }
+                    
+                    // Evidence samples
+                    if (data.debug_info.evidence_samples && data.debug_info.evidence_samples.length > 0) {
+                        document.getElementById('debug-evidence').textContent = 
+                            JSON.stringify(data.debug_info.evidence_samples, null, 2);
+                    }
+                    
+                    // API response
+                    if (data.debug_info.api_response) {
+                        document.getElementById('debug-response').textContent = data.debug_info.api_response;
+                    }
+                    
+                    // Ensure the debug card is visible
+                    debugCard.classList.remove('d-none');
+                    
+                    // Show the log file path if available
+                    if (data.debug_info.debug_log_path) {
+                        const logPathInfo = document.createElement('div');
+                        logPathInfo.className = 'alert alert-info mt-3';
+                        logPathInfo.innerHTML = `
+                            <h5>Debug Logs Available</h5>
+                            <p>Complete debug logs have been written to: <code>${data.debug_info.debug_log_path}</code></p>
+                            <p>Additional files with the same name but different extensions contain the full prompt, response and evidence data.</p>
+                        `;
+                        debugCard.appendChild(logPathInfo);
+                    }
+                    
+                    // Show debug message if available
+                    if (data.debug_info.debug_message) {
+                        const messageInfo = document.createElement('div');
+                        messageInfo.className = 'alert alert-success mt-3';
+                        messageInfo.innerHTML = `<p>${data.debug_info.debug_message}</p>`;
+                        debugCard.appendChild(messageInfo);
+                    }
+                }
+            }
             
             // Check for errors
             if (!data.success) {

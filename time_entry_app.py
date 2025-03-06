@@ -314,7 +314,9 @@ class TimeEntryApp:
                                     system_prompt: str = None,
                                     activity_codes: str = None,
                                     prompt_template: str = None,
-                                    custom_prompt: str = None) -> List[Dict[str, Any]]:
+                                    custom_prompt: str = None,
+                                    period_days: int = 7,
+                                    debug_prompt: bool = False) -> List[Dict[str, Any]]:
         """
         Generate time entries for a date range
         
@@ -326,13 +328,17 @@ class TimeEntryApp:
             activity_codes: Custom activity codes to use
             prompt_template: Custom prompt template to use
             custom_prompt: Complete custom prompt to bypass all templates
+            period_days: Number of days per processing period (default: 7 for weekly)
+            debug_prompt: Whether to save and return the final prompt for debugging
             
         Returns:
-            List of generated time entries
+            List of generated time entries or a dict with entries and debug info if debug_prompt=True
         """
         print(f"Generating time entries for date range - time_entry_app.py {start_date} to {end_date}")
         if evidence_types:
             print(f"Evidence types filter: {evidence_types}")
+        
+        print(f"Using {period_days}-day periods for processing")
         
         # Ensure dates are in proper ISO format (YYYY-MM-DD)
         try:
@@ -355,68 +361,111 @@ class TimeEntryApp:
             start_dt = datetime.fromisoformat(start_date)
             end_dt = datetime.fromisoformat(end_date)
         
-        # If we have a custom prompt, still process week by week, but pass the custom prompt
+        # Collect debug information if requested
+        debug_info = {
+            "date_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "evidence_types": evidence_types,
+            "period_days": period_days,
+            "prompts": [],
+            "evidence_samples": []
+        }
+        
+        # If we have a custom prompt, use the period_days approach but pass the custom prompt
         if custom_prompt:
             all_entries = []
             
-            # Process week by week
+            # First, let's verify that we're getting evidence for the specified types
+            all_evidence_count = 0
+            for evidence_type in evidence_types or ["email", "sms", "phone_call", "docket"]:
+                type_filters = {
+                    'start_date': start_date, 
+                    'end_date': end_date,
+                    'type': evidence_type
+                }
+                type_evidence = self.evidence_db.query_evidence(type_filters)
+                
+                # Store a sample of evidence for debugging
+                if debug_prompt and type_evidence:
+                    debug_info["evidence_samples"].append({
+                        "type": evidence_type,
+                        "count": len(type_evidence),
+                        "sample": type_evidence[:3] if len(type_evidence) > 0 else []
+                    })
+                
+                print(f"Found {len(type_evidence)} items of type {evidence_type}")
+                all_evidence_count += len(type_evidence)
+            
+            if all_evidence_count == 0:
+                print("WARNING: No evidence items found for specified types and date range!")
+            
+            # Process by specified periods
             current_date = start_dt
             while current_date <= end_dt:
-                # Find the start of the week (Monday)
-                week_start = current_date - timedelta(days=current_date.weekday())
-                if week_start < start_dt:
-                    week_start = start_dt
+                # For custom periods, just use the current date as the start point
+                period_start = current_date
                 
-                # End of week is 6 days later or the end date, whichever is earlier
-                week_end = week_start + timedelta(days=6)
-                if week_end > end_dt:
-                    week_end = end_dt
+                # Period end is period_days-1 days later or the end date, whichever is earlier
+                period_end = period_start + timedelta(days=period_days-1)
+                if period_end > end_dt:
+                    period_end = end_dt
                     
-                print(f"Processing week from {week_start.isoformat()} to {week_end.isoformat()} with custom prompt")
+                print(f"Processing period from {period_start.isoformat()} to {period_end.isoformat()} with custom prompt")
                 
-                # Generate entries for this week with custom prompt
-                week_entries = self.time_entry_generator.generate_weekly_entries(
-                    week_start.isoformat(),
+                # Generate entries for this period with custom prompt
+                period_prompt = custom_prompt.replace('{start_date}', period_start.isoformat()).replace('{end_date}', period_end.isoformat())
+                
+                # Store the prompt for debugging
+                if debug_prompt:
+                    debug_info["prompts"].append({
+                        "period": f"{period_start.isoformat()} to {period_end.isoformat()}",
+                        "prompt": period_prompt
+                    })
+                
+                # Generate entries for this period with custom prompt
+                period_entries = self.time_entry_generator.generate_entries_for_period(
+                    period_start.isoformat(),
+                    period_end.isoformat(),
                     evidence_types=evidence_types,
-                    custom_prompt=custom_prompt
+                    custom_prompt=period_prompt
                 )
                 
-                # Insert the entries for this week
-                if week_entries:
-                    count = self.evidence_db.insert_time_entries(week_entries)
-                    print(f"Generated and inserted {count} time entries for week of {week_start.isoformat()}")
-                    all_entries.extend(week_entries)
+                # Insert the entries for this period
+                if period_entries:
+                    count = self.evidence_db.insert_time_entries(period_entries)
+                    print(f"Generated and inserted {count} time entries for period {period_start.isoformat()} to {period_end.isoformat()}")
+                    all_entries.extend(period_entries)
                 
-                # Move to the next week
-                current_date += timedelta(days=7)
+                # Move to the next period
+                current_date = period_start + timedelta(days=period_days)
+            
+            # Return debug info if requested
+            if debug_prompt:
+                return {
+                    "entries": all_entries,
+                    "debug_info": debug_info
+                }
             
             return all_entries
-            
-        # Otherwise, use the week-by-week approach with the customized prompts
-        all_entries = []
         
-        # Process week by week
-        current_date = start_dt
-        while current_date <= end_dt:
-            # Find the start of the week (Monday)
-            week_start = current_date - timedelta(days=current_date.weekday())
-            if week_start < start_dt:
-                week_start = start_dt
-            
-            # Generate entries for this week with custom prompts
-            entries = self.generate_time_entries_for_week(
-                week_start.isoformat(),
-                evidence_types=evidence_types,
-                system_prompt=system_prompt,
-                activity_codes=activity_codes,
-                prompt_template=prompt_template
-            )
-            all_entries.extend(entries)
-            
-            # Move to the next week
-            current_date += timedelta(days=7)
+        # Otherwise, use the customized approach with the specified period length
+        result = self.time_entry_generator.generate_time_entries_for_date_range(
+            start_date,
+            end_date,
+            evidence_types=evidence_types,
+            system_prompt=system_prompt,
+            activity_codes=activity_codes,
+            prompt_template=prompt_template,
+            period_days=period_days,
+            debug_prompt=debug_prompt
+        )
         
-        return all_entries
+        if debug_prompt and isinstance(result, dict) and "debug_info" in result:
+            return result
+        
+        return result
          
     
     def export_time_entries(self, output_path: str, start_date: Optional[str] = None, 
